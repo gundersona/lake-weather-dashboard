@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lake Weather Dashboard — Historical Weather for US Lakes</title>
+  <meta name="description" content="Explore historical weather data for lakes across the United States: interactive map, charts, wind rose, and data table.">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+</head>
+<body>
+  <header>
+    <h1>Lake Weather Dashboard</h1>
+    <p>Historical weather for lakes across the United States — pick a lake, a date range, and a provider.</p>
+  </header>
+
+  <main>
+    <aside id="controls" aria-label="Dashboard controls">
+      <div class="card">
+        <h2>Controls</h2>
+
+        <label for="provider">Weather provider</label>
+        <select id="provider">
+          <option value="open-meteo">Open-Meteo (free, no key)</option>
+          <option value="meteostat">Meteostat (needs server API key)</option>
+        </select>
+
+        <label for="state">State</label>
+        <select id="state">
+          <option value="">— Select a state —</option>
+        </select>
+
+        <label for="lake-search">Search lakes</label>
+        <input type="search" id="lake-search" placeholder="Type a lake name…" autocomplete="off" disabled>
+        <ul id="lake-results" aria-label="Lake search results"></ul>
+        <p id="lake-selected" class="lake-selected">No lake selected.</p>
+
+        <div class="date-row">
+          <div>
+            <label for="start-date">Start date</label>
+            <input type="date" id="start-date">
+          </div>
+          <div>
+            <label for="end-date">End date</label>
+            <input type="date" id="end-date">
+          </div>
+        </div>
+
+        <label for="aggregation">Aggregation</label>
+        <select id="aggregation">
+          <option value="hourly">Hourly</option>
+          <option value="daily" selected>Daily</option>
+          <option value="monthly">Monthly</option>
+        </select>
+
+        <fieldset>
+          <legend>Variables</legend>
+          <label class="check"><input type="checkbox" data-var="temperature_2m" checked> Temperature</label>
+          <label class="check"><input type="checkbox" data-var="relative_humidity_2m" checked> Humidity</label>
+          <label class="check"><input type="checkbox" data-var="surface_pressure" checked> Pressure</label>
+          <label class="check"><input type="checkbox" data-var="precipitation" checked> Precipitation</label>
+          <label class="check"><input type="checkbox" data-var="wind_speed_10m" checked> Wind speed</label>
+          <label class="check"><input type="checkbox" data-var="wind_direction_10m" checked> Wind direction</label>
+        </fieldset>
+
+        <button id="load-btn" type="button">Load weather</button>
+        <p id="status" role="status" aria-live="polite"></p>
+      </div>
+    </aside>
+
+    <section id="visuals" aria-label="Weather visualizations">
+      <div class="card map-card">
+        <h2>Map</h2>
+        <div id="map" aria-label="Lake location map"></div>
+      </div>
+
+      <div class="card">
+        <h2>Summary</h2>
+        <div id="stat-cards"></div>
+      </div>
+
+      <div class="card">
+        <h2>Time series</h2>
+        <canvas id="line-chart" aria-label="Line chart of weather variables over time"></canvas>
+      </div>
+
+      <div class="card">
+        <h2>Totals / averages</h2>
+        <canvas id="bar-chart" aria-label="Bar chart of aggregated weather values"></canvas>
+      </div>
+
+      <div class="card">
+        <h2>Wind rose</h2>
+        <canvas id="wind-rose" aria-label="Wind rose diagram" width="360" height="360"></canvas>
+      </div>
+
+      <div class="card table-card">
+        <h2>Data</h2>
+        <div class="table-wrap">
+          <table id="data-table">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <button id="prev-page" type="button">‹ Previous</button>
+          <span id="page-info"></span>
+          <button id="next-page" type="button">Next ›</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Data: <a href="https://open-meteo.com/">Open-Meteo</a> (ERA5 reanalysis, interpolated to lake coordinates). Lake locations: USGS GNIS.</p>
+  </footer>
+
+  <script src="js/config.js" defer></script>
+  <script src="js/providers.js" defer></script>
+  <script src="js/lakes.js" defer></script>
+  <script src="js/app.js" defer></script>
+</body>
+</html>
