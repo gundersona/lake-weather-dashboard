@@ -40,6 +40,11 @@ main {
   align-items: start;
 }
 
+/* Grid items default to min-width: auto, which lets wide content (data table,
+   chart canvases) force the track wider than a phone viewport. Allow them to
+   shrink; inner content scrolls or scales instead. */
+main > * { min-width: 0; }
+
 .card {
   background: var(--card);
   border: 1px solid var(--border);
@@ -171,6 +176,9 @@ legend { font-weight: 600; font-size: 0.85rem; padding: 0 0.4rem; }
 .stat-card .stat-sub { font-size: 0.8rem; color: var(--muted); }
 
 canvas#wind-rose { display: block; margin: 0 auto; width: 100%; height: auto; max-width: 360px; }
+
+/* Chart.js sets inline pixel sizes on these; never let them exceed the card. */
+#line-chart, #bar-chart { display: block; max-width: 100%; }
 
 .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
