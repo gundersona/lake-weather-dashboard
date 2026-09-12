@@ -43,14 +43,38 @@ GNIS_DOWNLOAD_PAGE = "https://www.usgs.gov/us-board-on-geographic-names/download
 # GNIS feature classes we treat as lakes.
 LAKE_CLASSES = {"Lake", "Reservoir"}
 
-# Column positions in the GNIS pipe-delimited national file.
+# Column positions in the GNIS pipe-delimited national file (header):
+#   feature_id|feature_name|feature_class|state_name|state_numeric|county_name|
+#   county_numeric|map_name|date_created|date_edited|bgn_type|bgn_authority|
+#   bgn_date|prim_lat_dms|prim_long_dms|prim_lat_dec|prim_long_dec|
+#   source_lat_dms|source_long_dms|source_lat_dec|source_long_dec
 COL_FEATURE_ID = 0
 COL_FEATURE_NAME = 1
 COL_FEATURE_CLASS = 2
-COL_STATE_ALPHA = 3
+COL_STATE_NAME = 3
 COL_COUNTY_NAME = 5
-COL_LAT_DEC = 9
-COL_LON_DEC = 10
+COL_LAT_DEC = 15
+COL_LON_DEC = 16
+
+# GNIS state_name -> USPS alpha code (dashboard covers the 50 states).
+STATE_NAME_TO_ALPHA = {
+    "Alabama": "AL", "Alaska": "AK", "Arizona": "AZ", "Arkansas": "AR",
+    "California": "CA", "Colorado": "CO", "Connecticut": "CT",
+    "Delaware": "DE", "Florida": "FL", "Georgia": "GA", "Hawaii": "HI",
+    "Idaho": "ID", "Illinois": "IL", "Indiana": "IN", "Iowa": "IA",
+    "Kansas": "KS", "Kentucky": "KY", "Louisiana": "LA", "Maine": "ME",
+    "Maryland": "MD", "Massachusetts": "MA", "Michigan": "MI",
+    "Minnesota": "MN", "Mississippi": "MS", "Missouri": "MO",
+    "Montana": "MT", "Nebraska": "NE", "Nevada": "NV",
+    "New Hampshire": "NH", "New Jersey": "NJ", "New Mexico": "NM",
+    "New York": "NY", "North Carolina": "NC", "North Dakota": "ND",
+    "Ohio": "OH", "Oklahoma": "OK", "Oregon": "OR",
+    "Pennsylvania": "PA", "Rhode Island": "RI",
+    "South Carolina": "SC", "South Dakota": "SD", "Tennessee": "TN",
+    "Texas": "TX", "Utah": "UT", "Vermont": "VT", "Virginia": "VA",
+    "Washington": "WA", "West Virginia": "WV", "Wisconsin": "WI",
+    "Wyoming": "WY",
+}
 
 
 def slugify(text: str) -> str:
@@ -93,8 +117,10 @@ def print_manual_instructions(zip_path: Path | None) -> None:
 
 def iter_gnis_rows(path: Path):
     """Yield dict rows from the GNIS pipe-delimited national text file."""
-    # The national file is encoded in a Windows-compatible encoding.
-    with open(path, "r", encoding="cp1252", newline="") as f:
+    # The national file is encoded in a Windows-compatible encoding, with a few
+    # stray bytes that decode as neither cp1252 nor UTF-8; replace those rather
+    # than crashing.
+    with open(path, "r", encoding="cp1252", errors="replace", newline="") as f:
         reader = csv.reader(f, delimiter="|")
         header = next(reader, None)
         if header:
@@ -109,7 +135,7 @@ def parse_lakes(path: Path, max_per_state: int | None):
     """Parse the national file into {STATE: [lake dicts]}."""
     by_state: dict[str, list[dict]] = {}
     seen_ids: set[str] = set()
-    kept = skipped = 0
+    kept = skipped = bad_state = 0
 
     for row in iter_gnis_rows(path):
         if row[COL_FEATURE_CLASS] not in LAKE_CLASSES:
@@ -120,7 +146,10 @@ def parse_lakes(path: Path, max_per_state: int | None):
             continue  # same feature listed under another county/state
         seen_ids.add(fid)
 
-        state = row[COL_STATE_ALPHA].strip().upper()
+        state = STATE_NAME_TO_ALPHA.get(row[COL_STATE_NAME].strip())
+        if not state:
+            bad_state += 1
+            continue
         try:
             lat = float(row[COL_LAT_DEC])
             lon = float(row[COL_LON_DEC])
@@ -146,7 +175,8 @@ def parse_lakes(path: Path, max_per_state: int | None):
             by_state[state] = by_state[state][:max_per_state]
 
     print(f"  kept {kept} lake/reservoir features "
-          f"({skipped} non-lake rows skipped, {len(seen_ids)} unique ids)")
+          f"({skipped} non-lake rows skipped, {bad_state} outside the 50 states, "
+          f"{len(seen_ids)} unique ids)")
     return by_state
 
 
