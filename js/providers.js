@@ -4,7 +4,17 @@
 
 const OPEN_METEO_ARCHIVE = "https://archive-api.open-meteo.com/v1/archive";
 const MIN_START = "1940-01-01";
-const MAX_SPAN_DAYS = 366;
+const HOURLY_MAX_SPAN_DAYS = 366;
+
+/** Canonical hourly param -> Open-Meteo daily params (for daily/monthly aggregation). */
+const DAILY_MAP = {
+  temperature_2m: ["temperature_2m_max", "temperature_2m_min"],
+  precipitation: ["precipitation_sum"],
+  wind_speed_10m: ["wind_speed_10m_max"],
+  wind_direction_10m: ["wind_direction_10m_dominant"],
+};
+/** Params with no Open-Meteo daily equivalent (hourly aggregation only). */
+const HOURLY_ONLY_PARAMS = ["relative_humidity_2m", "surface_pressure"];
 
 function toISODate(d) {
   return d.toISOString().slice(0, 10);
@@ -17,30 +27,25 @@ function maxEndDate() {
   return toISODate(d);
 }
 
+/** ISO date n years ago today (handles leap years). */
+function yearsAgoISO(n) {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - n);
+  return toISODate(d);
+}
+
 function daysBetween(a, b) {
   return Math.round((new Date(b) - new Date(a)) / 86400000);
 }
 
-async function fetchOpenMeteo(lat, lon, start, end, params) {
-  if (start < MIN_START) {
-    throw new Error(`Start date must be on or after ${MIN_START} (archive data begins in 1940).`);
-  }
-  if (end > maxEndDate()) {
-    throw new Error(`End date must be no later than ${maxEndDate()} (archive data lags ~5 days).`);
-  }
-  if (start > end) {
-    throw new Error("Start date must be before the end date.");
-  }
-  if (daysBetween(start, end) > MAX_SPAN_DAYS) {
-    throw new Error("Date range is limited to 366 days per request.");
-  }
+function buildUrl(base, query) {
+  const qs = Object.entries(query)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join("&");
+  return `${base}?${qs}`;
+}
 
-  const url =
-    `${OPEN_METEO_ARCHIVE}?latitude=${encodeURIComponent(lat)}` +
-    `&longitude=${encodeURIComponent(lon)}` +
-    `&start_date=${encodeURIComponent(start)}&end_date=${encodeURIComponent(end)}` +
-    `&hourly=${encodeURIComponent(params.join(","))}&timezone=auto`;
-
+async function fetchJson(url, what) {
   const resp = await fetch(url);
   if (!resp.ok) {
     let detail = "";
@@ -51,14 +56,99 @@ async function fetchOpenMeteo(lat, lon, start, end, params) {
     throw new Error(`Open-Meteo request failed (HTTP ${resp.status})${detail}.`);
   }
   const data = await resp.json();
-  if (!data.hourly || !Array.isArray(data.hourly.time)) {
-    throw new Error("Open-Meteo returned an unexpected response (no hourly data).");
+  if (!data[what] || !Array.isArray(data[what].time)) {
+    throw new Error(`Open-Meteo returned an unexpected response (no ${what} data).`);
   }
+  return data[what];
+}
+
+async function fetchHourly(lat, lon, start, end, params) {
+  const url = buildUrl(OPEN_METEO_ARCHIVE, {
+    latitude: lat,
+    longitude: lon,
+    start_date: start,
+    end_date: end,
+    hourly: params.join(","),
+    timezone: "auto",
+  });
+  const hourly = await fetchJson(url, "hourly");
   const values = {};
   for (const p of params) {
-    values[p] = Array.isArray(data.hourly[p]) ? data.hourly[p] : [];
+    values[p] = Array.isArray(hourly[p]) ? hourly[p] : [];
   }
-  return { time: data.hourly.time, values };
+  return { time: hourly.time, values, resolution: "hourly" };
+}
+
+async function fetchDaily(lat, lon, start, end, params) {
+  const unsupported = params.filter((p) => HOURLY_ONLY_PARAMS.includes(p));
+  if (unsupported.length) {
+    throw new Error(
+      "Humidity and pressure are only available with hourly aggregation (past year). " +
+      "Uncheck them or switch the aggregation to hourly."
+    );
+  }
+  const dailyParams = [...new Set(params.flatMap((p) => DAILY_MAP[p] || []))];
+  if (!dailyParams.length) {
+    throw new Error("None of the selected variables are available for daily/monthly aggregation.");
+  }
+  const url = buildUrl(OPEN_METEO_ARCHIVE, {
+    latitude: lat,
+    longitude: lon,
+    start_date: start,
+    end_date: end,
+    daily: dailyParams.join(","),
+    timezone: "auto", // required when daily variables are requested
+  });
+  const daily = await fetchJson(url, "daily");
+  const n = daily.time.length;
+  const col = (name) => (Array.isArray(daily[name]) ? daily[name] : new Array(n).fill(null));
+  const notNull = (v) => v !== null && v !== undefined && !Number.isNaN(v);
+
+  const values = {};
+  if (params.includes("temperature_2m")) {
+    const tmax = col("temperature_2m_max");
+    const tmin = col("temperature_2m_min");
+    values["temperature_2m"] = tmax.map((v, i) =>
+      notNull(v) && notNull(tmin[i]) ? (v + tmin[i]) / 2 : null
+    );
+    values["temperature_2m_max"] = tmax;
+    values["temperature_2m_min"] = tmin;
+  }
+  if (params.includes("precipitation")) values["precipitation"] = col("precipitation_sum");
+  if (params.includes("wind_speed_10m")) values["wind_speed_10m"] = col("wind_speed_10m_max");
+  if (params.includes("wind_direction_10m")) values["wind_direction_10m"] = col("wind_direction_10m_dominant");
+  return { time: daily.time, values, resolution: "daily" };
+}
+
+async function fetchOpenMeteo(lat, lon, start, end, params, aggregation = "hourly") {
+  if (!["hourly", "daily", "monthly"].includes(aggregation)) {
+    throw new Error(`Unknown aggregation: ${aggregation}.`);
+  }
+  if (start < MIN_START) {
+    throw new Error(`Start date must be on or after ${MIN_START} (archive data begins in 1940).`);
+  }
+  const maxEnd = maxEndDate();
+  if (end > maxEnd) {
+    throw new Error(`End date must be no later than ${maxEnd} (archive data lags ~5 days).`);
+  }
+  if (start > end) {
+    throw new Error("Start date must be before the end date.");
+  }
+
+  if (aggregation === "hourly") {
+    if (start < yearsAgoISO(1) || daysBetween(start, end) > HOURLY_MAX_SPAN_DAYS) {
+      throw new Error("Hourly data is available for the past year only (max 366 days).");
+    }
+    return fetchHourly(lat, lon, start, end, params);
+  }
+  if (aggregation === "daily") {
+    if (start < yearsAgoISO(20)) {
+      throw new Error("Daily data is available for the past 20 years only.");
+    }
+    return fetchDaily(lat, lon, start, end, params);
+  }
+  // monthly: full archive back to 1940, fetched as daily values and bucketed client-side
+  return fetchDaily(lat, lon, start, end, params);
 }
 
 async function fetchMeteostat() {
@@ -77,8 +167,8 @@ const PROVIDERS = {
 };
 
 /** Unified entry point used by the app. */
-async function fetchWeather(provider, lat, lon, start, end, params) {
+async function fetchWeather(provider, lat, lon, start, end, params, aggregation = "hourly") {
   const p = PROVIDERS[provider];
   if (!p) throw new Error(`Unknown weather provider: ${provider}.`);
-  return p.fetchWeather(lat, lon, start, end, params);
+  return p.fetchWeather(lat, lon, start, end, params, aggregation);
 }

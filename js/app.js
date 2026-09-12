@@ -6,6 +6,8 @@
 const ROWS_PER_PAGE = 25;
 const COMPASS16 = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
                    "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+/** Variable keys with no Open-Meteo daily equivalent (hourly aggregation only). */
+const HOURLY_ONLY_KEYS = ["relative_humidity_2m", "surface_pressure"];
 
 let map = null;
 let lakeMarker = null;
@@ -142,11 +144,23 @@ async function onLoad() {
   const end = $("end-date").value;
   if (!start || !end) { setStatus("Please choose both a start and an end date.", true); return; }
 
-  const vars = selectedVariables();
+  let vars = selectedVariables();
   if (vars.length === 0) { setStatus("Please select at least one variable.", true); return; }
 
   const provider = $("provider").value;
   const aggregation = $("aggregation").value;
+
+  // Humidity and pressure have no Open-Meteo daily equivalent; they only work hourly.
+  let skipped = [];
+  if (aggregation !== "hourly") {
+    skipped = vars.filter((v) => HOURLY_ONLY_KEYS.includes(v.key));
+    vars = vars.filter((v) => !HOURLY_ONLY_KEYS.includes(v.key));
+  }
+  if (vars.length === 0) {
+    setStatus("None of the selected variables are available for " + aggregation +
+      " aggregation — humidity and pressure need hourly.", true);
+    return;
+  }
   const params = vars.map((v) => v.param);
 
   const btn = $("load-btn");
@@ -155,7 +169,7 @@ async function onLoad() {
   setStatus(`Fetching ${provider === "open-meteo" ? "Open-Meteo" : "Meteostat"} data for ${lake.name}…`);
 
   try {
-    const data = await fetchWeather(provider, lake.lat, lake.lon, start, end, params);
+    const data = await fetchWeather(provider, lake.lat, lake.lon, start, end, params, aggregation);
     if (!data.time.length) throw new Error("No data returned for this date range.");
 
     const buckets = aggregate(data, vars, aggregation);
@@ -165,7 +179,11 @@ async function onLoad() {
     buildTable(buckets, vars);
     renderWindRose(data);
 
-    setStatus(`Loaded ${buckets.length} ${aggregation} period${buckets.length === 1 ? "" : "s"} for ${lake.name} (${start} to ${end}).`);
+    let msg = `Loaded ${buckets.length} ${aggregation} period${buckets.length === 1 ? "" : "s"} for ${lake.name} (${start} to ${end}).`;
+    if (skipped.length) {
+      msg += ` Skipped ${skipped.map((v) => v.label).join(", ")} (hourly aggregation only).`;
+    }
+    setStatus(msg);
   } catch (err) {
     setStatus(err.message || "Something went wrong while loading weather data.", true);
     console.error(err);
@@ -189,9 +207,24 @@ function bucketKey(iso, mode) {
   return iso; // hourly
 }
 
-function computeStats(values, varDef) {
+/**
+ * Backing series for a variable + stat. Daily-resolution data stores the true
+ * daily min/max temperature separately (Open-Meteo has no daily mean), so min
+ * and max stats read those instead of the (max+min)/2 mean series.
+ */
+function seriesFor(data, varDef, stat) {
+  if (data.resolution === "daily" && varDef.key === "temperature_2m" &&
+      (stat === "min" || stat === "max")) {
+    const extra = data.values[`temperature_2m_${stat}`];
+    if (Array.isArray(extra)) return extra;
+  }
+  return data.values[varDef.param] || [];
+}
+
+function computeStats(varDef, getValues) {
   const s = {};
   for (const stat of varDef.stats) {
+    const values = getValues(stat);
     if (stat === "mean") s.mean = mean(values);
     else if (stat === "min") s.min = min(values);
     else if (stat === "max") s.max = max(values);
@@ -201,7 +234,7 @@ function computeStats(values, varDef) {
   return s;
 }
 
-/** Group hourly series into buckets; returns [{label, stats: {varKey: {...}}}]. */
+/** Group series into buckets; returns [{label, stats: {varKey: {...}}}]. */
 function aggregate(data, vars, mode) {
   const groups = new Map();
   data.time.forEach((t, i) => {
@@ -215,8 +248,7 @@ function aggregate(data, vars, mode) {
     const idx = groups.get(key);
     const stats = {};
     for (const v of vars) {
-      const series = data.values[v.param] || [];
-      stats[v.key] = computeStats(idx.map((i) => series[i]), v);
+      stats[v.key] = computeStats(v, (stat) => idx.map((i) => seriesFor(data, v, stat)[i]));
     }
     return { label: key, stats };
   });
@@ -224,7 +256,7 @@ function aggregate(data, vars, mode) {
 
 /** Overall stats across the whole raw series (for the summary cards). */
 function overallStats(data, varDef) {
-  return computeStats(data.values[varDef.param] || [], varDef);
+  return computeStats(varDef, (stat) => seriesFor(data, varDef, stat));
 }
 
 // ---------------------------------------------------------------- stat cards
@@ -243,7 +275,7 @@ function renderStatCards(data, vars) {
     let big, sub;
     if (v.key === "precipitation") {
       big = `${fmt(s.total)} ${v.unit}`;
-      sub = `total over ${n} hours`;
+      sub = `total over ${n} ${data.resolution === "daily" ? "days" : "hours"}`;
     } else if (v.key === "wind_direction_10m") {
       big = s.prevailing === null ? "—" : `${compass16(s.prevailing)} ${Math.round(s.prevailing)}°`;
       sub = "prevailing direction";
