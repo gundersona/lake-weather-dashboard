@@ -11,8 +11,20 @@ let selectedLake = null;
 const lakeSearchInput = document.getElementById("lake-search");
 const lakeResultsList = document.getElementById("lake-results");
 const lakeSelectedEl = document.getElementById("lake-selected");
-const stateSelect = document.getElementById("state");
+const stateInput = document.getElementById("state");
+const stateList = document.getElementById("state-list");
 const statusEl = document.getElementById("status");
+
+/** Code of the currently loaded state, "" when none. */
+let currentStateCode = "";
+
+/** Resolve typed text to a state code: "wisconsin"/"WI" -> "WI", "" -> "", else null. */
+function resolveStateCode(text) {
+  const t = text.trim().toLowerCase();
+  if (!t) return "";
+  const hit = STATES.find((st) => st.code.toLowerCase() === t || st.name.toLowerCase() === t);
+  return hit ? hit.code : null;
+}
 
 async function initLakes() {
   try {
@@ -25,17 +37,38 @@ async function initLakes() {
     return;
   }
 
-  // Populate the state dropdown from config STATES, marking which have data.
-  const statesWithData = new Set(Object.keys(lakeIndex.states || {}));
+  // Populate the state datalist (type a name/code or pick from the dropdown).
   for (const st of STATES) {
-    const opt = document.createElement("option");
-    opt.value = st.code;
-    opt.textContent = statesWithData.has(st.code) ? st.name : `${st.name} (no data yet)`;
-    stateSelect.appendChild(opt);
+    const byName = document.createElement("option");
+    byName.value = st.name;
+    stateList.appendChild(byName);
+    const byCode = document.createElement("option");
+    byCode.value = st.code;
+    byCode.label = st.name;
+    stateList.appendChild(byCode);
   }
 
-  stateSelect.addEventListener("change", onStateChange);
+  stateInput.addEventListener("input", () => {
+    const code = resolveStateCode(stateInput.value);
+    if (code === "" && currentStateCode) {
+      onStateChange("");
+    } else if (code && code !== currentStateCode) {
+      onStateChange(code);
+    }
+  });
+  stateInput.addEventListener("change", () => {
+    // Fires on blur / Enter / datalist pick. Nudge if the text matches nothing.
+    if (resolveStateCode(stateInput.value) === null && stateInput.value.trim() !== "") {
+      setStatus(`"${stateInput.value.trim()}" doesn't match a US state — pick one from the list.`, true);
+    }
+  });
   lakeSearchInput.addEventListener("input", onSearchInput);
+  lakeSearchInput.addEventListener("focus", () => {
+    // Browsing: show the first lakes alphabetically even before typing.
+    if (lakeSearchInput.value.trim() === "" && currentLakes.length > 0) {
+      renderLakeMatches(currentLakes.slice(0, 50), true);
+    }
+  });
   document.addEventListener("click", (e) => {
     if (!lakeResultsList.contains(e.target) && e.target !== lakeSearchInput) {
       lakeResultsList.classList.remove("visible");
@@ -43,8 +76,8 @@ async function initLakes() {
   });
 }
 
-async function onStateChange() {
-  const code = stateSelect.value;
+async function onStateChange(code) {
+  currentStateCode = code || "";
   currentLakes = [];
   selectedLake = null;
   lakeSelectedEl.textContent = "No lake selected.";
@@ -55,6 +88,12 @@ async function onStateChange() {
     lakeSearchInput.disabled = true;
     lakeSearchInput.value = "";
     return;
+  }
+
+  // Normalize what the user typed to the full state name.
+  const st = STATES.find((s) => s.code === code);
+  if (st && stateInput.value.trim().toLowerCase() !== st.name.toLowerCase()) {
+    stateInput.value = st.name;
   }
 
   const file = lakeIndex.states && lakeIndex.states[code];
@@ -83,21 +122,31 @@ async function onStateChange() {
 
 function onSearchInput() {
   const q = lakeSearchInput.value.trim().toLowerCase();
-  lakeResultsList.innerHTML = "";
   if (!q || currentLakes.length === 0) {
+    lakeResultsList.innerHTML = "";
     lakeResultsList.classList.remove("visible");
     return;
   }
   const matches = currentLakes
     .filter((l) => l.name.toLowerCase().includes(q))
     .slice(0, 50);
+  renderLakeMatches(matches, false);
+}
 
+function renderLakeMatches(matches, isBrowsing) {
+  lakeResultsList.innerHTML = "";
   if (matches.length === 0) {
     const li = document.createElement("li");
     li.textContent = "No matches.";
     li.setAttribute("aria-disabled", "true");
     lakeResultsList.appendChild(li);
   } else {
+    if (isBrowsing) {
+      const hint = document.createElement("li");
+      hint.textContent = `Showing first ${matches.length} of ${currentLakes.length} lakes — type to narrow down.`;
+      hint.setAttribute("aria-disabled", "true");
+      lakeResultsList.appendChild(hint);
+    }
     for (const lake of matches) {
       const li = document.createElement("li");
       li.tabIndex = 0;

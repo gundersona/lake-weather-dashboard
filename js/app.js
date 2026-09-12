@@ -491,6 +491,8 @@ function changePage(delta) {
 // ---------------------------------------------------------------- wind rose
 
 function renderWindRose(data) {
+  const windSpeedUnit = () =>
+    (VARIABLES.find((v) => v.key === "wind_speed_10m") || {}).unit || "mph";
   const canvas = $("wind-rose");
   const ctx = canvas.getContext("2d");
   const W = canvas.width, H = canvas.height;
@@ -533,7 +535,7 @@ function renderWindRose(data) {
     ctx.stroke();
     ctx.fillText(`${(maxMean * f).toFixed(1)}`, cx + 4, cy - R * f - 3);
   }
-  ctx.fillText("km/h", cx + 4, cy - R - 15);
+  ctx.fillText(windSpeedUnit(), cx + 4, cy - R - 15);
 
   // Wedges: bin i centered at angle -90° + i*45° (N at top).
   for (let i = 0; i < BINS; i++) {

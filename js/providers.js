@@ -38,6 +38,12 @@ function daysBetween(a, b) {
   return Math.round((new Date(b) - new Date(a)) / 86400000);
 }
 
+const OPEN_METEO_UNITS = {
+  temperature_unit: "fahrenheit",
+  precipitation_unit: "inch",
+  wind_speed_unit: "mph",
+};
+
 function buildUrl(base, query) {
   const qs = Object.entries(query)
     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
@@ -64,6 +70,7 @@ async function fetchJson(url, what) {
 
 async function fetchHourly(lat, lon, start, end, params) {
   const url = buildUrl(OPEN_METEO_ARCHIVE, {
+    ...OPEN_METEO_UNITS,
     latitude: lat,
     longitude: lon,
     start_date: start,
@@ -92,6 +99,7 @@ async function fetchDaily(lat, lon, start, end, params) {
     throw new Error("None of the selected variables are available for daily/monthly aggregation.");
   }
   const url = buildUrl(OPEN_METEO_ARCHIVE, {
+    ...OPEN_METEO_UNITS,
     latitude: lat,
     longitude: lon,
     start_date: start,

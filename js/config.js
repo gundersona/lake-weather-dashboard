@@ -37,10 +37,10 @@ const STATES = [
  * color: chart color.
  */
 const VARIABLES = [
-  { key: "temperature_2m", label: "Temperature", unit: "\u00B0C", param: "temperature_2m", stats: ["mean", "min", "max"], color: "#e74c3c" },
+  { key: "temperature_2m", label: "Temperature", unit: "\u00B0F", param: "temperature_2m", stats: ["mean", "min", "max"], color: "#e74c3c" },
   { key: "relative_humidity_2m", label: "Humidity", unit: "%", param: "relative_humidity_2m", stats: ["mean", "min", "max"], color: "#3498db" },
   { key: "surface_pressure", label: "Pressure", unit: "hPa", param: "surface_pressure", stats: ["mean", "min", "max"], color: "#9b59b6" },
-  { key: "precipitation", label: "Precipitation", unit: "mm", param: "precipitation", stats: ["total"], color: "#2ecc71" },
-  { key: "wind_speed_10m", label: "Wind speed", unit: "km/h", param: "wind_speed_10m", stats: ["mean", "max"], color: "#f39c12" },
+  { key: "precipitation", label: "Precipitation", unit: "in", param: "precipitation", stats: ["total"], color: "#2ecc71" },
+  { key: "wind_speed_10m", label: "Wind speed", unit: "mph", param: "wind_speed_10m", stats: ["mean", "max"], color: "#f39c12" },
   { key: "wind_direction_10m", label: "Wind direction", unit: "\u00B0", param: "wind_direction_10m", stats: ["prevailing"], color: "#7f8c8d" },
 ];

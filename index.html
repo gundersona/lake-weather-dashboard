@@ -28,9 +28,8 @@
         </select>
 
         <label for="state">State</label>
-        <select id="state">
-          <option value="">— Select a state —</option>
-        </select>
+        <input type="text" id="state" list="state-list" placeholder="Type or pick a state…" autocomplete="off">
+        <datalist id="state-list"></datalist>
 
         <label for="lake-search">Search lakes</label>
         <input type="search" id="lake-search" placeholder="Type a lake name…" autocomplete="off" disabled>
