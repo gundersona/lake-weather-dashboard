@@ -6,8 +6,11 @@
   <title>Lake Weather Dashboard — Historical Weather for US Lakes</title>
   <meta name="description" content="Explore historical weather data for lakes across the United States: interactive map, charts, wind rose, and data table.">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
   <link rel="stylesheet" href="css/styles.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 </head>
 <body>
@@ -35,6 +38,12 @@
         <input type="search" id="lake-search" placeholder="Type a lake name…" autocomplete="off" disabled>
         <ul id="lake-results" aria-label="Lake search results"></ul>
         <p id="lake-selected" class="lake-selected">No lake selected.</p>
+
+        <div class="map-card">
+          <h2>Map</h2>
+          <div id="map" aria-label="Lake location map"></div>
+          <p class="empty-note" id="map-note">Pick a state to see its lakes.</p>
+        </div>
 
         <div class="date-row">
           <div>
@@ -71,11 +80,6 @@
     </aside>
 
     <section id="visuals" aria-label="Weather visualizations">
-      <div class="card map-card">
-        <h2>Map</h2>
-        <div id="map" aria-label="Lake location map"></div>
-      </div>
-
       <div class="card">
         <h2>Summary</h2>
         <div id="stat-cards"></div>
@@ -87,8 +91,8 @@
       </div>
 
       <div class="card">
-        <h2>Totals / averages</h2>
-        <canvas id="bar-chart" aria-label="Bar chart of aggregated weather values"></canvas>
+        <h2>Average temperature</h2>
+        <canvas id="bar-chart" aria-label="Bar chart of average temperature"></canvas>
       </div>
 
       <div class="card">

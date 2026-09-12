@@ -10,7 +10,12 @@ const COMPASS16 = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
 const HOURLY_ONLY_KEYS = ["relative_humidity_2m", "surface_pressure"];
 
 let map = null;
-let lakeMarker = null;
+/** Marker-cluster group holding one dot per lake of the chosen state. */
+let lakeCluster = null;
+/** lake object -> L.marker, for the currently shown state. */
+const lakeMarkerByObj = new Map();
+/** Currently highlighted (selected) lake marker, if any. */
+let selectedDot = null;
 let lineChart = null;
 let barChart = null;
 let tableRows = [];
@@ -88,6 +93,7 @@ function init() {
   setDefaultDates();
   initMap();
   window.__onLakeSelected = onLakeSelected;
+  window.__onLakesLoaded = showLakesOnMap;
   $("load-btn").addEventListener("click", onLoad);
   $("prev-page").addEventListener("click", () => changePage(-1));
   $("next-page").addEventListener("click", () => changePage(1));
@@ -116,15 +122,74 @@ function initMap() {
   }).addTo(map);
 }
 
-function onLakeSelected(lake) {
+const lakeDotIcon = () =>
+  L.divIcon({ className: "lake-dot", iconSize: [10, 10], iconAnchor: [5, 5] });
+const lakeDotSelectedIcon = () =>
+  L.divIcon({ className: "lake-dot selected", iconSize: [14, 14], iconAnchor: [7, 7] });
+
+/**
+ * Show every lake of the chosen state as a clickable dot (clustered).
+ * Called from lakes.js after a state's lake file loads; [] clears the map.
+ */
+function showLakesOnMap(lakes) {
+  if (!map || typeof L === "undefined") return;
+  if (lakeCluster) { map.removeLayer(lakeCluster); lakeCluster = null; }
+  lakeMarkerByObj.clear();
+  selectedDot = null;
+
+  const noteEl = document.getElementById("map-note");
+  if (!lakes || lakes.length === 0) {
+    if (noteEl) noteEl.textContent = "Pick a state to see its lakes.";
+    return;
+  }
+  if (typeof L.markerClusterGroup === "undefined") {
+    if (noteEl) noteEl.textContent = "Lake markers unavailable — marker library failed to load.";
+    return;
+  }
+
+  lakeCluster = L.markerClusterGroup({
+    showCoverageOnHover: false,
+    maxClusterRadius: 60,
+    disableClusteringAtZoom: 12,
+  });
+  for (const lake of lakes) {
+    const m = L.marker([lake.lat, lake.lon], { icon: lakeDotIcon(), title: lake.name });
+    m.on("click", () => {
+      // lakes.js exposes selectLake globally; skip the zoom (already looking at it).
+      if (typeof selectLake === "function") selectLake(lake, { zoom: false });
+    });
+    lakeMarkerByObj.set(lake, m);
+    lakeCluster.addLayer(m);
+  }
+  map.addLayer(lakeCluster);
+  map.fitBounds(lakeCluster.getBounds().pad(0.05));
+  if (noteEl) {
+    noteEl.textContent = `${lakes.length.toLocaleString()} lakes — click a dot to select.`;
+  }
+}
+
+/** Highlight the selected lake's dot and pop it up; zoom only when asked. */
+function highlightLake(lake, { zoom } = {}) {
   if (!map) return;
-  if (lakeMarker) map.removeLayer(lakeMarker);
-  lakeMarker = L.marker([lake.lat, lake.lon]).addTo(map);
-  lakeMarker.bindPopup(
+  if (selectedDot) { selectedDot.setIcon(lakeDotIcon()); selectedDot = null; }
+  const m = lakeMarkerByObj.get(lake);
+  if (!m) return;
+  selectedDot = m;
+  m.setIcon(lakeDotSelectedIcon());
+  m.bindPopup(
     `<b>${esc(lake.name)}</b><br>${esc(lake.county || "unknown county")}, ${esc(lake.state)}` +
     `<br>${lake.lat.toFixed(3)}, ${lake.lon.toFixed(3)}`
-  ).openPopup();
-  map.setView([lake.lat, lake.lon], 9);
+  );
+  if (zoom && lakeCluster) {
+    // Drill through clusters so the popup is actually visible.
+    lakeCluster.zoomToShowLayer(m, () => m.openPopup());
+  } else {
+    m.openPopup();
+  }
+}
+
+function onLakeSelected(lake, opts) {
+  highlightLake(lake, { zoom: !opts || opts.zoom !== false });
 }
 
 function maybeProviderNotice() {
@@ -389,37 +454,30 @@ function renderBarChart(data, vars, aggregation) {
   canvas.style.display = "";
   if (typeof Chart === "undefined") return;
 
-  const precip = vars.find((v) => v.key === "precipitation");
   const temp = vars.find((v) => v.key === "temperature_2m");
   // Bars are always daily or coarser (hourly is re-bucketed to daily).
   const mode = aggregation === "hourly" ? "daily" : aggregation;
 
-  let target, label, color, valueFn;
-  if (precip) {
-    target = precip; label = `Precipitation total (${precip.unit})`;
-    color = precip.color; valueFn = (s) => s.total;
-  } else if (temp) {
-    target = temp; label = `Mean temperature (${temp.unit})`;
-    color = temp.color; valueFn = (s) => s.mean;
-  } else {
+  if (!temp) {
     canvas.style.display = "none";
     const note = document.createElement("p");
     note.className = "empty-note";
-    note.textContent = "Select precipitation or temperature to see the bar chart.";
+    note.textContent = "Select temperature to see the bar chart.";
     card.appendChild(note);
     return;
   }
 
-  const buckets = aggregate(data, [target], mode);
+  const label = `Mean temperature (${temp.unit})`;
+  const buckets = aggregate(data, [temp], mode);
   barChart = new Chart(canvas, {
     type: "bar",
     data: {
       labels: buckets.map((b) => b.label),
       datasets: [{
         label,
-        data: buckets.map((b) => valueFn(b.stats[target.key])),
-        backgroundColor: color,
-        borderColor: color,
+        data: buckets.map((b) => b.stats[temp.key].mean),
+        backgroundColor: temp.color,
+        borderColor: temp.color,
       }],
     },
     options: {
@@ -427,7 +485,7 @@ function renderBarChart(data, vars, aggregation) {
       plugins: { legend: { display: false } },
       scales: {
         x: { ticks: { maxTicksLimit: 14, maxRotation: 45 } },
-        y: { title: { display: true, text: target.unit } },
+        y: { title: { display: true, text: temp.unit } },
       },
     },
   });

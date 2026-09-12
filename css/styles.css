@@ -129,6 +129,19 @@ legend { font-weight: 600; font-size: 0.85rem; padding: 0 0.4rem; }
 .lake-selected strong { color: var(--ink); }
 
 #map { height: 340px; border-radius: 8px; z-index: 0; }
+#controls #map { height: 320px; }
+#controls .map-card { margin: 0.8rem 0 0; }
+#controls .map-card h2 { margin-bottom: 0.5rem; }
+
+/* Clickable lake dots (divIcon) shown in a marker-cluster group. */
+.lake-dot {
+  background: #2a7fbf;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+}
+.lake-dot.selected { background: #e74c3c; }
 
 #stat-cards {
   display: grid;

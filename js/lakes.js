@@ -18,6 +18,13 @@ const statusEl = document.getElementById("status");
 /** Code of the currently loaded state, "" when none. */
 let currentStateCode = "";
 
+/** Tell app.js (map) which lakes are currently shown; [] clears the map. */
+function notifyLakesLoaded(lakes) {
+  if (typeof window.__onLakesLoaded === "function") {
+    window.__onLakesLoaded(lakes);
+  }
+}
+
 /** Resolve typed text to a state code: "wisconsin"/"WI" -> "WI", "" -> "", else null. */
 function resolveStateCode(text) {
   const t = text.trim().toLowerCase();
@@ -87,6 +94,7 @@ async function onStateChange(code) {
   if (!code) {
     lakeSearchInput.disabled = true;
     lakeSearchInput.value = "";
+    notifyLakesLoaded([]);
     return;
   }
 
@@ -101,6 +109,7 @@ async function onStateChange(code) {
     lakeSearchInput.disabled = true;
     lakeSearchInput.value = "";
     setStatus("No lake data for this state yet — run scripts/build_lakes.py to generate the full US dataset.", true);
+    notifyLakesLoaded([]);
     return;
   }
 
@@ -111,6 +120,7 @@ async function onStateChange(code) {
   } catch (err) {
     setStatus(`Could not load lake data for ${code}.`, true);
     console.error("state lake load failed:", err);
+    notifyLakesLoaded([]);
     return;
   }
 
@@ -118,6 +128,7 @@ async function onStateChange(code) {
   lakeSearchInput.value = "";
   lakeSearchInput.placeholder = `Search ${currentLakes.length} lakes in ${code}…`;
   setStatus("");
+  notifyLakesLoaded(currentLakes);
 }
 
 function onSearchInput() {
@@ -162,7 +173,7 @@ function renderLakeMatches(matches, isBrowsing) {
   lakeResultsList.classList.add("visible");
 }
 
-function selectLake(lake) {
+function selectLake(lake, opts) {
   selectedLake = lake;
   lakeSearchInput.value = lake.name;
   lakeResultsList.classList.remove("visible");
@@ -175,7 +186,7 @@ function selectLake(lake) {
   ));
   setStatus("");
   if (typeof window.__onLakeSelected === "function") {
-    window.__onLakeSelected(lake);
+    window.__onLakeSelected(lake, opts);
   }
 }
 
