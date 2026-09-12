@@ -8,9 +8,9 @@ const HOURLY_MAX_SPAN_DAYS = 366;
 
 /** Canonical hourly param -> Open-Meteo daily params (for daily/monthly aggregation). */
 const DAILY_MAP = {
-  temperature_2m: ["temperature_2m_max", "temperature_2m_min"],
+  temperature_2m: ["temperature_2m_max", "temperature_2m_min", "temperature_2m_mean"],
   precipitation: ["precipitation_sum"],
-  wind_speed_10m: ["wind_speed_10m_max"],
+  wind_speed_10m: ["wind_speed_10m_max", "wind_speed_10m_mean"],
   wind_direction_10m: ["wind_direction_10m_dominant"],
 };
 /** Params with no Open-Meteo daily equivalent (hourly aggregation only). */
@@ -110,20 +110,19 @@ async function fetchDaily(lat, lon, start, end, params) {
   const daily = await fetchJson(url, "daily");
   const n = daily.time.length;
   const col = (name) => (Array.isArray(daily[name]) ? daily[name] : new Array(n).fill(null));
-  const notNull = (v) => v !== null && v !== undefined && !Number.isNaN(v);
 
   const values = {};
   if (params.includes("temperature_2m")) {
-    const tmax = col("temperature_2m_max");
-    const tmin = col("temperature_2m_min");
-    values["temperature_2m"] = tmax.map((v, i) =>
-      notNull(v) && notNull(tmin[i]) ? (v + tmin[i]) / 2 : null
-    );
-    values["temperature_2m_max"] = tmax;
-    values["temperature_2m_min"] = tmin;
+    // True daily mean straight from the API (not the (max+min)/2 approximation).
+    values["temperature_2m"] = col("temperature_2m_mean");
+    values["temperature_2m_max"] = col("temperature_2m_max");
+    values["temperature_2m_min"] = col("temperature_2m_min");
   }
   if (params.includes("precipitation")) values["precipitation"] = col("precipitation_sum");
-  if (params.includes("wind_speed_10m")) values["wind_speed_10m"] = col("wind_speed_10m_max");
+  if (params.includes("wind_speed_10m")) {
+    values["wind_speed_10m"] = col("wind_speed_10m_mean");
+    values["wind_speed_10m_max"] = col("wind_speed_10m_max");
+  }
   if (params.includes("wind_direction_10m")) values["wind_direction_10m"] = col("wind_direction_10m_dominant");
   return { time: daily.time, values, resolution: "daily" };
 }

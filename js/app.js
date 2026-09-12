@@ -216,14 +216,19 @@ function bucketKey(iso, mode) {
 
 /**
  * Backing series for a variable + stat. Daily-resolution data stores the true
- * daily min/max temperature separately (Open-Meteo has no daily mean), so min
- * and max stats read those instead of the (max+min)/2 mean series.
+ * daily aggregates separately, so min/max stats read those columns instead of
+ * the mean series.
  */
 function seriesFor(data, varDef, stat) {
-  if (data.resolution === "daily" && varDef.key === "temperature_2m" &&
-      (stat === "min" || stat === "max")) {
-    const extra = data.values[`temperature_2m_${stat}`];
-    if (Array.isArray(extra)) return extra;
+  if (data.resolution === "daily") {
+    if (varDef.key === "temperature_2m" && (stat === "min" || stat === "max")) {
+      const extra = data.values[`temperature_2m_${stat}`];
+      if (Array.isArray(extra)) return extra;
+    }
+    if (varDef.key === "wind_speed_10m" && stat === "max") {
+      const extra = data.values["wind_speed_10m_max"];
+      if (Array.isArray(extra)) return extra;
+    }
   }
   return data.values[varDef.param] || [];
 }
@@ -582,5 +587,43 @@ function renderWindRose(data) {
   for (let i = 0; i < BINS; i++) {
     const a = (-90 + i * 45) * Math.PI / 180;
     ctx.fillText(labels[i], cx + Math.cos(a) * (R + 20), cy + Math.sin(a) * (R + 20) + 4);
+  }
+
+  // Prevailing direction marker: red arrow at the circular mean of the
+  // direction series (0° = N, same convention as the wedges).
+  const prevailing = circularMean(dirs);
+  if (prevailing !== null) {
+    const a = ((-90 + (prevailing % 360)) * Math.PI) / 180;
+    const tipX = cx + Math.cos(a) * (R + 10);
+    const tipY = cy + Math.sin(a) * (R + 10);
+    ctx.strokeStyle = "#e74c3c";
+    ctx.fillStyle = "#e74c3c";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(tipX, tipY);
+    ctx.stroke();
+    const ahLen = 11, spread = Math.PI / 7;
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY);
+    ctx.lineTo(tipX - ahLen * Math.cos(a - spread), tipY - ahLen * Math.sin(a - spread));
+    ctx.lineTo(tipX - ahLen * Math.cos(a + spread), tipY - ahLen * Math.sin(a + spread));
+    ctx.closePath();
+    ctx.fill();
+    ctx.lineWidth = 1;
+  }
+
+  // Explain the data source: hourly mode uses every observation, daily/monthly
+  // mode uses one (dominant direction, mean speed) pair per day.
+  const noteEl = document.getElementById("wind-rose-note");
+  if (noteEl) {
+    noteEl.innerHTML =
+      "Each wedge points in the compass direction the wind <em>comes from</em>; " +
+      "its length is the average wind speed from that direction over the selected period. " +
+      "Rings are labeled in mph. The red arrow marks the prevailing wind direction." +
+      (data.resolution === "hourly"
+        ? " Built from every hourly observation in the range."
+        : " Built from one value per day (dominant direction and daily mean speed), " +
+          "so expect a coarser picture than hourly mode.");
   }
 }
