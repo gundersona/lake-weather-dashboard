@@ -231,6 +231,8 @@ footer a { color: var(--accent); }
 
   #stat-cards { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
   .stat-card .stat-value { font-size: 1.2rem; }
+
+  .check { padding: 0.6rem 0; }
 }
 
 @media (max-width: 420px) {

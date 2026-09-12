@@ -115,17 +115,23 @@ function initMap() {
     $("map").innerHTML = '<p class="empty-note">Map library failed to load.</p>';
     return;
   }
-  map = L.map("map").setView([39.8, -98.5], 4);
+  map = L.map("map", { tapTolerance: COARSE_POINTER ? 30 : 15 }).setView([39.8, -98.5], 4);
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   }).addTo(map);
 }
 
+/** Touch devices get bigger lake dots and a more forgiving tap radius. */
+const COARSE_POINTER = typeof window.matchMedia === "function" &&
+  window.matchMedia("(pointer: coarse)").matches;
+const LAKE_DOT = COARSE_POINTER ? 20 : 10;
+const LAKE_DOT_SEL = COARSE_POINTER ? 26 : 14;
+
 const lakeDotIcon = () =>
-  L.divIcon({ className: "lake-dot", iconSize: [10, 10], iconAnchor: [5, 5] });
+  L.divIcon({ className: "lake-dot", iconSize: [LAKE_DOT, LAKE_DOT], iconAnchor: [LAKE_DOT / 2, LAKE_DOT / 2] });
 const lakeDotSelectedIcon = () =>
-  L.divIcon({ className: "lake-dot selected", iconSize: [14, 14], iconAnchor: [7, 7] });
+  L.divIcon({ className: "lake-dot selected", iconSize: [LAKE_DOT_SEL, LAKE_DOT_SEL], iconAnchor: [LAKE_DOT_SEL / 2, LAKE_DOT_SEL / 2] });
 
 /**
  * Show every lake of the chosen state as a clickable dot (clustered).
@@ -619,9 +625,15 @@ function renderWindRose(data) {
     ctx.beginPath();
     ctx.arc(cx, cy, R * f, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.fillText(`${(maxMean * f).toFixed(1)}`, cx + 4, cy - R * f - 3);
+    const valLabel = `${(maxMean * f).toFixed(1)}`;
+    ctx.fillText(valLabel, cx + 4, cy - R * f - 3);
+    if (f === 1) {
+      // Unit sits on the same baseline, just right of the outer ring value —
+      // kept clear of the "N" compass label above it.
+      const w = ctx.measureText(valLabel).width;
+      ctx.fillText(windSpeedUnit(), cx + 4 + w / 2 + 12, cy - R * f - 3);
+    }
   }
-  ctx.fillText(windSpeedUnit(), cx + 4, cy - R - 15);
 
   // Wedges: bin i centered at angle -90° + i*45° (N at top).
   for (let i = 0; i < BINS; i++) {
