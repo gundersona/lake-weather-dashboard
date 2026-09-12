@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mobile overflow probe (temporary)</title>
+<style>
+  body { font-family: monospace; padding: 1rem; }
+  iframe { border: 2px solid red; }
+  #out { white-space: pre-wrap; background: #f4f4f4; padding: 1rem; }
+</style>
+</head>
+<body>
+<h1>390px overflow probe (temporary diagnostic page)</h1>
+<iframe id="t" src="./index.html" style="width:390px;height:844px"></iframe>
+<pre id="out">starting…</pre>
+<script>
+const out = [];
+const log = (m) => { out.push(m); document.getElementById('out').textContent = out.join('\n'); };
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+async function waitFor(fn, timeout, label) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeout) {
+    try { const v = fn(); if (v) return v; } catch (e) { /* keep polling */ }
+    await sleep(500);
+  }
+  throw new Error('timeout: ' + label);
+}
+document.getElementById('t').addEventListener('load', async () => {
+  try {
+    const frame = document.getElementById('t');
+    const win = frame.contentWindow;
+    const doc = win.document;
+    const $ = (id) => doc.getElementById(id);
+    await sleep(3000); // libs + init
+    log('iframe innerWidth=' + win.innerWidth);
+
+    // 1. Pick Wisconsin.
+    const stateInput = $('state');
+    stateInput.value = 'Wisconsin';
+    stateInput.dispatchEvent(new win.Event('input', { bubbles: true }));
+    stateInput.dispatchEvent(new win.Event('change', { bubbles: true }));
+    await waitFor(() => doc.getElementById('map-note').textContent.includes('lakes'), 45000, 'lakes load');
+    log('lakes: ' + doc.getElementById('map-note').textContent.trim());
+
+    // 2. Pick Lake Winnebago via search.
+    const lakeInput = $('lake-search');
+    await waitFor(() => !lakeInput.disabled, 15000, 'lake search enabled');
+    lakeInput.value = 'Lake Winnebago';
+    lakeInput.dispatchEvent(new win.Event('input', { bubbles: true }));
+    const li = await waitFor(() => doc.querySelector('#lake-results li'), 15000, 'lake result');
+    li.click();
+    await sleep(800);
+    log('selected: ' + $('lake-selected').textContent.trim());
+
+    // 3. Load weather.
+    $('load-btn').click();
+    await waitFor(() => $('status').textContent.includes('Loaded'), 90000, 'weather load');
+    log('status: ' + $('status').textContent.trim());
+    await sleep(2500); // charts + map settle
+
+    // 4. Measure overflow.
+    const de = doc.documentElement;
+    log('viewport clientWidth=' + de.clientWidth + ' scrollWidth=' + de.scrollWidth +
+        ' body scrollWidth=' + doc.body.scrollWidth);
+    const offenders = [];
+    doc.querySelectorAll('*').forEach((el) => {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && (r.right > de.clientWidth + 1 || r.left < -1)) {
+        const id = el.id ? '#' + el.id : '';
+        let cls = '';
+        if (typeof el.className === 'string' && el.className) cls = '.' + el.className.trim().split(/\s+/).join('.');
+        const cs = win.getComputedStyle(el);
+        offenders.push(
+          el.tagName.toLowerCase() + id + cls +
+          ' rect[l=' + Math.round(r.left) + ',r=' + Math.round(r.right) + ',w=' + Math.round(r.width) + ']' +
+          ' scrollW=' + el.scrollWidth + ' clientW=' + el.clientWidth +
+          ' minW=' + cs.minWidth + ' maxW=' + cs.maxWidth + ' overflowX=' + cs.overflowX
+        );
+      }
+    });
+    // Sort: outermost (smallest area not possible) — just show widest first.
+    offenders.sort((a, b) => 0);
+    log('OFFENDERS (' + offenders.length + '), viewport=' + de.clientWidth + ':\n' + offenders.slice(0, 50).join('\n'));
+    log('DONE');
+  } catch (e) { log('ERROR: ' + (e && e.stack || e)); }
+});
+</script>
+</body>
+</html>
