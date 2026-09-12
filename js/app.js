@@ -73,6 +73,13 @@ function primaryStat(key, stats) {
   return stats.mean;
 }
 
+/** Short label for the stat plotted/reported per variable: avg, total, or prevailing. */
+function statDescriptor(varDef) {
+  if (varDef.key === "precipitation") return "total";
+  if (varDef.key === "wind_direction_10m") return "prevailing";
+  return "avg";
+}
+
 // ---------------------------------------------------------------- init
 
 document.addEventListener("DOMContentLoaded", init);
@@ -174,7 +181,7 @@ async function onLoad() {
 
     const buckets = aggregate(data, vars, aggregation);
     renderStatCards(data, vars);
-    renderLineChart(buckets, vars);
+    renderLineChart(buckets, vars, aggregation);
     renderBarChart(data, vars, aggregation);
     buildTable(buckets, vars);
     renderWindRose(data);
@@ -303,7 +310,7 @@ function renderStatCards(data, vars) {
 
 // ---------------------------------------------------------------- line chart
 
-function renderLineChart(buckets, vars) {
+function renderLineChart(buckets, vars, aggregation) {
   if (lineChart) { lineChart.destroy(); lineChart = null; }
   if (typeof Chart === "undefined") return;
 
@@ -312,6 +319,7 @@ function renderLineChart(buckets, vars) {
   const scales = {};
   let axisCount = 0;
 
+  const axisLabel = (v) => `${v.label} (${statDescriptor(v)}, ${v.unit})`;
   for (const v of vars) {
     if (!unitToAxis.has(v.unit)) {
       const id = `y${axisCount++}`;
@@ -320,14 +328,14 @@ function renderLineChart(buckets, vars) {
         type: "linear",
         display: true,
         position: axisCount === 1 ? "left" : "right",
-        title: { display: true, text: `${v.label} (${v.unit})` },
+        title: { display: true, text: axisLabel(v) },
         grid: { drawOnChartArea: axisCount === 1 },
       };
     }
   }
 
   const datasets = vars.map((v) => ({
-    label: `${v.label} (${v.unit})`,
+    label: axisLabel(v),
     data: buckets.map((b) => primaryStat(v.key, b.stats[v.key])),
     borderColor: v.color,
     backgroundColor: v.color,
@@ -337,13 +345,26 @@ function renderLineChart(buckets, vars) {
     spanGaps: true,
   }));
 
+  // Title names the aggregation so it's clear the plotted values are
+  // period averages (precipitation is always a total, not an average).
+  const modeNoun = aggregation === "hourly" ? "Hourly values"
+    : aggregation === "daily" ? "Daily averages" : "Monthly averages";
+  const notes = [];
+  if (aggregation !== "hourly" && vars.some((v) => v.key === "precipitation")) {
+    notes.push("precipitation: totals");
+  }
+  const titleText = notes.length ? `${modeNoun} (${notes.join("; ")})` : modeNoun;
+
   lineChart = new Chart($("line-chart"), {
     type: "line",
     data: { labels, datasets },
     options: {
       responsive: true,
       interaction: { mode: "index", intersect: false },
-      plugins: { legend: { position: "top" } },
+      plugins: {
+        legend: { position: "top" },
+        title: { display: true, text: titleText },
+      },
       scales: {
         x: { ticks: { maxTicksLimit: 14, maxRotation: 45 } },
         ...scales,
@@ -445,7 +466,9 @@ function renderTable() {
   hr.appendChild(th0);
   for (const v of tableVars) {
     const th = document.createElement("th");
-    th.textContent = `${v.label} (${v.unit})`;
+    const headerStat = v.key === "precipitation" ? "total"
+      : v.key === "wind_direction_10m" ? "prevailing" : "avg / min / max";
+    th.textContent = `${v.label} (${v.unit}) — ${headerStat}`;
     hr.appendChild(th);
   }
   thead.appendChild(hr);
