@@ -122,6 +122,31 @@ function setDefaultDates() {
   $("start-date").value = d(40);
 }
 
+/** State code -> boundary polygon layer, for highlighting the selected state. */
+const stateLayerByCode = new Map();
+
+function defaultStateStyle() {
+  return { color: "#94a3b8", weight: 1, opacity: 0.7, fillColor: "#94a3b8", fillOpacity: 0.05 };
+}
+
+/** Highlight the selected state's boundary on the map ("" = none selected). */
+function highlightState(code) {
+  for (const [c, layer] of stateLayerByCode) {
+    layer.setStyle(c === code
+      ? { color: "#2563eb", weight: 2, opacity: 0.9, fillColor: "#2563eb", fillOpacity: 0.08 }
+      : defaultStateStyle());
+  }
+}
+
+/** Select a state programmatically — e.g. from a click on the map. */
+function selectState(code) {
+  if (!code || code === currentStateCode) return;
+  const st = STATES.find((s) => s.code === code);
+  if (!st) return;
+  stateInput.value = st.name;
+  onStateChange(code);
+}
+
 function initMap() {
   if (typeof L === "undefined") {
     $("map").innerHTML = '<p class="empty-note">Map library failed to load.</p>';
@@ -132,6 +157,28 @@ function initMap() {
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   }).addTo(map);
+
+  // Clickable state boundaries as an alternative to the state dropdown.
+  fetch("data/us-states.geojson")
+    .then((resp) => {
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      return resp.json();
+    })
+    .then((geo) => {
+      const nameToCode = new Map(STATES.map((st) => [st.name, st.code]));
+      L.geoJSON(geo, {
+        style: defaultStateStyle,
+        onEachFeature: (feature, layer) => {
+          const name = feature.properties && feature.properties.name;
+          const code = nameToCode.get(name) || null;
+          if (code) stateLayerByCode.set(code, layer);
+          if (name) layer.bindTooltip(name, { sticky: true });
+          if (code) layer.on("click", () => selectState(code));
+        },
+      }).addTo(map);
+      highlightState(currentStateCode);
+    })
+    .catch((err) => console.error("state boundaries failed to load:", err));
 }
 
 /** Touch devices get bigger lake dots and a more forgiving tap radius. */
@@ -157,7 +204,7 @@ function showLakesOnMap(lakes) {
 
   const noteEl = document.getElementById("map-note");
   if (!lakes || lakes.length === 0) {
-    if (noteEl) noteEl.textContent = "Pick a state to see its lakes.";
+    if (noteEl) noteEl.textContent = "Pick a state — or click a state on the map — to see its lakes.";
     return;
   }
   if (typeof L.markerClusterGroup === "undefined") {
@@ -182,7 +229,7 @@ function showLakesOnMap(lakes) {
   map.addLayer(lakeCluster);
   map.fitBounds(lakeCluster.getBounds().pad(0.05));
   if (noteEl) {
-    noteEl.textContent = `${lakes.length.toLocaleString()} lakes — click a dot to select.`;
+    noteEl.textContent = `${lakes.length.toLocaleString()} lakes — click a dot to select, or click another state on the map to switch.`;
   }
 }
 

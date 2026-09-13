@@ -44,15 +44,11 @@ async function initLakes() {
     return;
   }
 
-  // Populate the state datalist (type a name/code or pick from the dropdown).
+  // Populate the state datalist (type a name or pick from the dropdown).
   for (const st of STATES) {
     const byName = document.createElement("option");
     byName.value = st.name;
     stateList.appendChild(byName);
-    const byCode = document.createElement("option");
-    byCode.value = st.code;
-    byCode.label = st.name;
-    stateList.appendChild(byCode);
   }
 
   stateInput.addEventListener("input", () => {
@@ -85,6 +81,7 @@ async function initLakes() {
 
 async function onStateChange(code) {
   currentStateCode = code || "";
+  if (typeof highlightState === "function") highlightState(currentStateCode);
   currentLakes = [];
   selectedLake = null;
   lakeSelectedEl.textContent = "No lake selected.";
