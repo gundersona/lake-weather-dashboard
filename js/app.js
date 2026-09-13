@@ -17,12 +17,18 @@ const lakeMarkerByObj = new Map();
 /** Currently highlighted (selected) lake marker, if any. */
 let selectedDot = null;
 let lineChart = null;
-let barChart = null;
 let tableRows = [];
 let tableVars = [];
 let tablePage = 0;
 
 const $ = (id) => document.getElementById(id);
+
+/**
+ * Narrow portrait phones get a square-ish time series chart (aspectRatio 1)
+ * instead of the cramped default 2:1; wider screens keep 2:1.
+ */
+const narrowChartQuery = window.matchMedia("(max-width: 600px)");
+function chartAspectRatio() { return narrowChartQuery.matches ? 1 : 2; }
 
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({
@@ -98,6 +104,12 @@ function init() {
   $("prev-page").addEventListener("click", () => changePage(-1));
   $("next-page").addEventListener("click", () => changePage(1));
   $("provider").addEventListener("change", maybeProviderNotice);
+  // Re-tall the time series chart if the phone rotates between portrait/landscape.
+  if (typeof narrowChartQuery.addEventListener === "function") {
+    narrowChartQuery.addEventListener("change", () => {
+      if (lineChart) { lineChart.options.aspectRatio = chartAspectRatio(); lineChart.resize(); }
+    });
+  }
 }
 
 function setDefaultDates() {
@@ -253,7 +265,6 @@ async function onLoad() {
     const buckets = aggregate(data, vars, aggregation);
     renderStatCards(data, vars);
     renderLineChart(buckets, vars, aggregation);
-    renderBarChart(data, vars, aggregation);
     buildTable(buckets, vars);
     renderWindRose(data);
 
@@ -436,6 +447,7 @@ function renderLineChart(buckets, vars, aggregation) {
     data: { labels, datasets },
     options: {
       responsive: true,
+      aspectRatio: chartAspectRatio(),
       interaction: { mode: "index", intersect: false },
       plugins: {
         legend: { position: "top" },
@@ -444,54 +456,6 @@ function renderLineChart(buckets, vars, aggregation) {
       scales: {
         x: { ticks: { maxTicksLimit: 14, maxRotation: 45 } },
         ...scales,
-      },
-    },
-  });
-}
-
-// ---------------------------------------------------------------- bar chart
-
-function renderBarChart(data, vars, aggregation) {
-  if (barChart) { barChart.destroy(); barChart = null; }
-  const canvas = $("bar-chart");
-  const card = canvas.closest(".card");
-  const oldNote = card.querySelector(".empty-note");
-  if (oldNote) oldNote.remove();
-  canvas.style.display = "";
-  if (typeof Chart === "undefined") return;
-
-  const temp = vars.find((v) => v.key === "temperature_2m");
-  // Bars are always daily or coarser (hourly is re-bucketed to daily).
-  const mode = aggregation === "hourly" ? "daily" : aggregation;
-
-  if (!temp) {
-    canvas.style.display = "none";
-    const note = document.createElement("p");
-    note.className = "empty-note";
-    note.textContent = "Select temperature to see the bar chart.";
-    card.appendChild(note);
-    return;
-  }
-
-  const label = `Mean temperature (${temp.unit})`;
-  const buckets = aggregate(data, [temp], mode);
-  barChart = new Chart(canvas, {
-    type: "bar",
-    data: {
-      labels: buckets.map((b) => b.label),
-      datasets: [{
-        label,
-        data: buckets.map((b) => b.stats[temp.key].mean),
-        backgroundColor: temp.color,
-        borderColor: temp.color,
-      }],
-    },
-    options: {
-      responsive: true,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { ticks: { maxTicksLimit: 14, maxRotation: 45 } },
-        y: { title: { display: true, text: temp.unit } },
       },
     },
   });
@@ -690,7 +654,7 @@ function renderWindRose(data) {
     noteEl.innerHTML =
       "Each wedge points in the compass direction the wind <em>comes from</em>; " +
       "its length is the average wind speed from that direction over the selected period. " +
-      "Rings are labeled in mph. The red arrow marks the prevailing wind direction." +
+      "Rings are labeled in mph. The red arrow points at the compass direction the prevailing wind comes from." +
       (data.resolution === "hourly"
         ? " Built from every hourly observation in the range."
         : " Built from one value per day (dominant direction and daily mean speed), " +
