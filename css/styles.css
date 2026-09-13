@@ -182,18 +182,36 @@ canvas#wind-rose { display: block; margin: 0 auto; width: 100%; height: auto; ma
 
 .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
-#data-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+#data-table, #analysis-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 
-#data-table th, #data-table td {
+#data-table th, #data-table td,
+#analysis-table th, #analysis-table td {
   padding: 0.4rem 0.55rem;
   border-bottom: 1px solid var(--border);
   text-align: right;
   white-space: nowrap;
 }
 
-#data-table th:first-child, #data-table td:first-child { text-align: left; }
+#data-table th:first-child, #data-table td:first-child,
+#analysis-table th:first-child, #analysis-table td:first-child { text-align: left; }
 
-#data-table thead th { background: #f2f7fb; font-weight: 700; }
+/* Lake names read better left-aligned. */
+#analysis-table th:nth-child(2), #analysis-table td:nth-child(2) { text-align: left; }
+
+#data-table thead th, #analysis-table thead th { background: #f2f7fb; font-weight: 700; }
+
+#analysis-table button {
+  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fbfdff;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+#analysis-table button:hover { background: #eef4fa; }
 
 .pagination { display: flex; align-items: center; gap: 0.8rem; margin-top: 0.8rem; }
 
@@ -213,6 +231,72 @@ footer { text-align: center; color: var(--muted); font-size: 0.85rem; padding: 1
 footer a { color: var(--accent); }
 
 .empty-note { color: var(--muted); font-style: italic; }
+
+/* ---------------------------------------------------------------- analysis */
+
+.card-sub { color: var(--muted); font-size: 0.92rem; margin: 0 0 1rem; }
+
+.analysis-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: flex-end;
+  margin-bottom: 0.75rem;
+}
+
+.analysis-controls > div { display: flex; flex-direction: column; gap: 0.3rem; }
+
+.analysis-controls label { font-size: 0.82rem; font-weight: 600; color: var(--muted); }
+
+.analysis-controls input, .analysis-controls select {
+  font-size: 16px;
+  padding: 0.55rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  max-width: 100%;
+}
+
+.analysis-actions { flex-direction: row !important; gap: 0.5rem; }
+
+#analysis-run {
+  padding: 0.6rem 1.4rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+#analysis-run:hover:not(:disabled) { background: var(--accent-dark); }
+#analysis-run:disabled { opacity: 0.6; cursor: wait; }
+
+#analysis-cancel {
+  padding: 0.6rem 1.1rem;
+  font-size: 0.95rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fbfdff;
+  cursor: pointer;
+}
+
+.analysis-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin: 0.25rem 0 0.6rem;
+}
+
+.analysis-progress progress { flex: 1; height: 1.1rem; }
+#analysis-progress-text { font-size: 0.85rem; color: var(--muted); white-space: nowrap; }
+
+#analysis-status { font-size: 0.88rem; min-height: 1.4em; margin: 0.6rem 0 0; }
+#analysis-status.error { color: #c0392b; }
+
+[hidden] { display: none !important; }
 .chart-note { color: var(--muted); font-size: 0.82rem; margin: 0.4rem 0 0; }
 
 @media (max-width: 900px) {
@@ -234,6 +318,8 @@ footer a { color: var(--accent); }
   #controls #map { height: 300px; }
 
   #load-btn { min-height: 48px; }
+
+  #analysis-run, #analysis-cancel { min-height: 44px; }
 
   .pagination button { min-height: 44px; padding: 0.5rem 1.1rem; }
 
