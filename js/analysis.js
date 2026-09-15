@@ -256,7 +256,7 @@ async function loadAnalysisLake(lake) {
   // so the map highlight and popup work.
   const live = currentLakes.find((l) => l.id === lake.id) || lake;
   selectLake(live, { zoom: true });
-  document.getElementById("visuals").scrollIntoView({ behavior: "smooth", block: "start" });
+  document.getElementById("map").scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 document.addEventListener("DOMContentLoaded", initAnalysis);

@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
-  <link rel="stylesheet" href="css/styles.css?v=4">
+  <link rel="stylesheet" href="css/styles.css?v=5">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
@@ -44,6 +44,7 @@
           <h2>Map</h2>
           <div id="map" aria-label="Lake location map"></div>
           <p class="empty-note" id="map-note">Pick a state to see its lakes.</p>
+          <button id="zoom-lake-btn" type="button" disabled>Zoom to selected lake</button>
         </div>
 
         <div class="date-row">
@@ -173,8 +174,8 @@
 
   <script src="js/config.js" defer></script>
   <script src="js/providers.js" defer></script>
-  <script src="js/lakes.js" defer></script>
-  <script src="js/app.js?v=3" defer></script>
-  <script src="js/analysis.js?v=1" defer></script>
+  <script src="js/lakes.js?v=1" defer></script>
+  <script src="js/app.js?v=4" defer></script>
+  <script src="js/analysis.js?v=2" defer></script>
 </body>
 </html>

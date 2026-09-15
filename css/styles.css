@@ -296,6 +296,21 @@ footer a { color: var(--accent); }
 #analysis-status { font-size: 0.88rem; min-height: 1.4em; margin: 0.6rem 0 0; }
 #analysis-status.error { color: #c0392b; }
 
+#zoom-lake-btn {
+  margin-top: 0.5rem;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fbfdff;
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+#zoom-lake-btn:hover:not(:disabled) { background: #eef4fa; }
+#zoom-lake-btn:disabled { opacity: 0.45; cursor: default; }
+
 [hidden] { display: none !important; }
 .chart-note { color: var(--muted); font-size: 0.82rem; margin: 0.4rem 0 0; }
 
@@ -319,7 +334,7 @@ footer a { color: var(--accent); }
 
   #load-btn { min-height: 48px; }
 
-  #analysis-run, #analysis-cancel { min-height: 44px; }
+  #analysis-run, #analysis-cancel, #zoom-lake-btn { min-height: 44px; }
 
   .pagination button { min-height: 44px; padding: 0.5rem 1.1rem; }
 

@@ -81,9 +81,11 @@ async function initLakes() {
 
 async function onStateChange(code) {
   currentStateCode = code || "";
+  selectedLake = null;
+  const zoomBtn = document.getElementById("zoom-lake-btn");
+  if (zoomBtn) zoomBtn.disabled = true;
   if (typeof highlightState === "function") highlightState(currentStateCode);
   currentLakes = [];
-  selectedLake = null;
   lakeSelectedEl.textContent = "No lake selected.";
   lakeResultsList.classList.remove("visible");
   lakeResultsList.innerHTML = "";
@@ -172,6 +174,8 @@ function renderLakeMatches(matches, isBrowsing) {
 
 function selectLake(lake, opts) {
   selectedLake = lake;
+  const zoomBtn = document.getElementById("zoom-lake-btn");
+  if (zoomBtn) zoomBtn.disabled = false;
   lakeSearchInput.value = lake.name;
   lakeResultsList.classList.remove("visible");
   lakeSelectedEl.innerHTML = "";

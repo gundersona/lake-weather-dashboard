@@ -104,6 +104,10 @@ function init() {
   $("prev-page").addEventListener("click", () => changePage(-1));
   $("next-page").addEventListener("click", () => changePage(1));
   $("provider").addEventListener("change", maybeProviderNotice);
+  $("zoom-lake-btn").addEventListener("click", () => {
+    const lake = getSelectedLake();
+    if (lake) highlightLake(lake, { zoom: true });
+  });
   // Re-tall the time series chart if the phone rotates between portrait/landscape.
   if (typeof narrowChartQuery.addEventListener === "function") {
     narrowChartQuery.addEventListener("change", () => {
