@@ -4,13 +4,15 @@
 // archive API's multi-location support (100 lakes per request, 4 concurrent
 // requests), averages each lake's daily means over the period, and ranks the
 // lakes. Built for long, monthly-style periods — not hourly data.
+// Uses the shared date range, month filter, and temperature/area filters from
+// Controls: only days whose month is selected and whose daily mean temperature
+// is in range contribute to each lake's average.
 "use strict";
 
 const ANALYSIS_BATCH = 100;
 const ANALYSIS_CONCURRENCY = 4;
 const ANALYSIS_FILE_CONCURRENCY = 8;
 const ANALYSIS_MIN_DATE = "1940-01-01";
-const KM2_TO_ACRES = 247.105; // NHD areas are stored as km^2; the UI filters in acres.
 
 let analysisRunning = false;
 let analysisAborter = null;
@@ -25,16 +27,7 @@ function analysisMean(values) {
   return n ? sum / n : null;
 }
 
-function analysisISODate(daysAgo) {
-  const t = new Date();
-  t.setDate(t.getDate() - daysAgo);
-  return t.toISOString().slice(0, 10);
-}
-
 function initAnalysis() {
-  // Archive data lags ~5 days behind the present.
-  $("analysis-end").value = analysisISODate(6);
-  $("analysis-start").value = analysisISODate(371);
   refreshAnalysisScopeLabel();
   $("analysis-run").addEventListener("click", runAnalysis);
   $("analysis-cancel").addEventListener("click", () => {
@@ -81,13 +74,14 @@ async function fetchAllStateLakes(signal, onFile) {
   return out;
 }
 
-/** Mean daily wind speed (mph) for up to 100 lakes over [start, end]. */
-async function fetchBatchMeans(batch, start, end, signal) {
+/** Daily wind (+ optional daily mean temperature) for up to 100 lakes over [start, end]. */
+async function fetchBatchDaily(batch, start, end, signal, wantTemp) {
   const lats = batch.map((l) => l.lat.toFixed(4)).join(",");
   const lons = batch.map((l) => l.lon.toFixed(4)).join(",");
   const url = "https://archive-api.open-meteo.com/v1/archive" +
     `?latitude=${lats}&longitude=${lons}&start_date=${start}&end_date=${end}` +
-    "&daily=wind_speed_10m_mean&wind_speed_unit=mph&timezone=UTC";
+    `&daily=${wantTemp ? "wind_speed_10m_mean,temperature_2m_mean" : "wind_speed_10m_mean"}` +
+    "&wind_speed_unit=mph&temperature_unit=fahrenheit&timezone=UTC";
   let lastErr = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -96,7 +90,14 @@ async function fetchBatchMeans(batch, start, end, signal) {
       const data = await resp.json();
       // Multi-location returns an array; a single location returns one object.
       const arr = Array.isArray(data) ? data : [data];
-      return arr.map((r) => analysisMean(((r || {}).daily || {}).wind_speed_10m_mean || []));
+      return arr.map((r) => {
+        const d = (r || {}).daily || {};
+        return {
+          time: d.time || [],
+          wind: d.wind_speed_10m_mean || [],
+          temp: wantTemp ? d.temperature_2m_mean || [] : null,
+        };
+      });
     } catch (err) {
       if (signal.aborted) throw err;
       lastErr = err;
@@ -125,22 +126,29 @@ async function runAnalysis() {
     lakes = currentLakes;
   }
 
-  // Clamp dates to what the archive can serve.
-  const maxEnd = analysisISODate(5);
-  let start = $("analysis-start").value;
-  let end = $("analysis-end").value;
+  // Shared date range from Controls; clamp to what the archive can serve
+  // (kept local — the shared inputs are left untouched for the main section).
+  let start = $("start-date").value;
+  let end = $("end-date").value;
   if (!start || !end) {
-    setAnalysisStatus("Choose both a start and an end date.", true);
+    setAnalysisStatus("Choose both a start and an end date in Controls.", true);
     return;
   }
   if (start < ANALYSIS_MIN_DATE) start = ANALYSIS_MIN_DATE;
+  const maxEnd = maxEndDate();
   if (end > maxEnd) end = maxEnd;
   if (start > end) {
     setAnalysisStatus("Start date must be on or before the end date.", true);
     return;
   }
-  $("analysis-start").value = start;
-  $("analysis-end").value = end;
+
+  const months = getActiveMonths();
+  if (!months.length) {
+    setAnalysisStatus("Select at least one month in the Months filter.", true);
+    return;
+  }
+  const tempRange = getTempRange();
+  const tempActive = tempRange.min !== null || tempRange.max !== null;
 
   analysisRunning = true;
   analysisAborter = new AbortController();
@@ -159,18 +167,13 @@ async function runAnalysis() {
     }
     if (signal.aborted) return;
 
-    // Optional surface-area filter. Lakes with no NHD area data can't be
-    // verified against the filter, so they're excluded when it's active.
-    const minAcres = parseFloat($("analysis-min-area").value);
-    const maxAcres = parseFloat($("analysis-max-area").value);
+    // Shared surface-area filter from Controls. Lakes with no NHD area data
+    // can't be verified against the filter, so they're excluded when active.
+    const areaRange = getAreaRange();
     let areaExcluded = 0;
-    if (!isNaN(minAcres) || !isNaN(maxAcres)) {
+    if (areaRange.min !== null || areaRange.max !== null) {
       const before = lakes.length;
-      lakes = lakes.filter((l) => {
-        if (l.area_km2 == null) return false;
-        const ac = l.area_km2 * KM2_TO_ACRES;
-        return (isNaN(minAcres) || ac >= minAcres) && (isNaN(maxAcres) || ac <= maxAcres);
-      });
+      lakes = lakes.filter(lakePassesAreaFilter);
       areaExcluded = before - lakes.length;
     }
     if (!lakes.length) {
@@ -192,10 +195,26 @@ async function runAnalysis() {
         if (signal.aborted) return;
         const batch = batches[next++];
         try {
-          const means = await fetchBatchMeans(batch, start, end, signal);
+          const series = await fetchBatchDaily(batch, start, end, signal, tempActive);
           for (let k = 0; k < batch.length; k++) {
-            if (means[k] === null || means[k] === undefined) failed++;
-            else results.push({ lake: batch[k], mean: means[k] });
+            const s = series[k];
+            // Keep only days whose month is selected and whose daily mean
+            // temperature is in range; average wind over those days.
+            const windVals = [];
+            for (let i = 0; i < s.wind.length; i++) {
+              const day = (s.time[i] || "").slice(0, 10);
+              if (!months.includes(parseInt(day.slice(5, 7), 10))) continue;
+              if (tempActive) {
+                const t = s.temp ? s.temp[i] : null;
+                if (t === null || t === undefined) continue;
+                if (tempRange.min !== null && t < tempRange.min) continue;
+                if (tempRange.max !== null && t > tempRange.max) continue;
+              }
+              windVals.push(s.wind[i]);
+            }
+            const m = analysisMean(windVals);
+            if (m === null || m === undefined) failed++;
+            else results.push({ lake: batch[k], mean: m });
           }
         } catch (err) {
           if (signal.aborted) return;
@@ -214,6 +233,8 @@ async function runAnalysis() {
     renderAnalysisTable(results.slice(0, topN), scope === "all");
     $("analysis-table-wrap").hidden = false;
     const notes = [];
+    if (months.length < 12) notes.push(`months: ${months.map((m) => MONTH_ABBR[m - 1]).join(", ")}`);
+    if (tempActive) notes.push(`daily mean temp ${tempRange.min ?? "…"}–${tempRange.max ?? "…"}°F`);
     if (areaExcluded) notes.push(`${areaExcluded.toLocaleString()} excluded by the area filter`);
     if (failed) notes.push(`${failed.toLocaleString()} had no usable data`);
     setAnalysisStatus(
@@ -233,14 +254,6 @@ async function runAnalysis() {
     $("analysis-progress").hidden = true;
     if (wasAborted) setAnalysisStatus("Cancelled.");
   }
-}
-
-function formatAcres(km2) {
-  if (km2 == null) return "—";
-  const ac = km2 * KM2_TO_ACRES;
-  if (ac < 1) return "<1";
-  if (ac < 10) return ac.toFixed(1);
-  return Math.round(ac).toLocaleString("en-US");
 }
 
 function renderAnalysisTable(rows, showState) {

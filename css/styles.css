@@ -97,6 +97,55 @@ legend { font-weight: 600; font-size: 0.85rem; padding: 0 0.4rem; }
 
 .date-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
 
+/* Shared month / temperature / area filters (apply to loading and analysis). */
+.filter-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-top: 0.6rem; }
+.filter-row > div { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
+.filter-row label { font-size: 0.82rem; font-weight: 600; color: var(--muted); }
+.filter-row input {
+  font-size: 16px;
+  padding: 0.55rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  max-width: 100%;
+}
+
+#month-filter { margin-top: 0.9rem; }
+.month-grid { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.month-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: #fff;
+  cursor: pointer;
+  user-select: none;
+}
+.month-pill input { position: absolute; opacity: 0; pointer-events: none; }
+.month-pill:has(input:checked) { background: var(--accent); border-color: var(--accent); color: #fff; }
+.month-pill:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.month-actions { margin-top: 0.45rem; display: flex; align-items: center; gap: 0.5rem; }
+.month-actions button {
+  background: none;
+  border: none;
+  padding: 0.25rem 0;
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.month-actions span { color: var(--muted); }
+@media (pointer: coarse) {
+  .month-pill { min-height: 44px; }
+  .month-actions button { min-height: 44px; }
+}
+
 #load-btn {
   width: 100%;
   margin-top: 1rem;
@@ -346,5 +395,5 @@ footer a { color: var(--accent); }
 
 @media (max-width: 420px) {
   /* Very narrow phones: stack the date inputs for roomier touch targets. */
-  .date-row { grid-template-columns: 1fr; }
+  .date-row, .filter-row { grid-template-columns: 1fr; }
 }

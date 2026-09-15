@@ -6,6 +6,10 @@
 const ROWS_PER_PAGE = 25;
 const COMPASS16 = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
                    "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** NHD lake areas are stored as km^2; the UI filters in acres. */
+const KM2_TO_ACRES = 247.105;
 /** Variable keys with no Open-Meteo daily equivalent (hourly aggregation only). */
 const HOURLY_ONLY_KEYS = ["relative_humidity_2m", "surface_pressure"];
 
@@ -108,6 +112,8 @@ function init() {
     const lake = getSelectedLake();
     if (lake) highlightLake(lake, { zoom: true });
   });
+  $("months-all").addEventListener("click", () => setAllMonths(true));
+  $("months-none").addEventListener("click", () => setAllMonths(false));
   // Re-tall the time series chart if the phone rotates between portrait/landscape.
   if (typeof narrowChartQuery.addEventListener === "function") {
     narrowChartQuery.addEventListener("change", () => {
@@ -269,6 +275,107 @@ function maybeProviderNotice() {
   }
 }
 
+// ---------------------------------------------------------------- shared filters
+// The month / temperature / area filters live in Controls and apply to both
+// weather loading and lake analysis.
+
+/** Months (1–12) currently selected in the Months filter. */
+function getActiveMonths() {
+  return [...document.querySelectorAll('#month-filter input[data-month]:checked')]
+    .map((c) => parseInt(c.getAttribute("data-month"), 10));
+}
+
+function setAllMonths(on) {
+  document.querySelectorAll('#month-filter input[data-month]')
+    .forEach((c) => { c.checked = on; });
+}
+
+function getRange(minId, maxId) {
+  const min = parseFloat($(minId).value);
+  const max = parseFloat($(maxId).value);
+  return { min: Number.isNaN(min) ? null : min, max: Number.isNaN(max) ? null : max };
+}
+
+/** Temperature filter in °F; null bound = no bound. */
+function getTempRange() { return getRange("filter-temp-min", "filter-temp-max"); }
+
+/** Area filter in acres; null bound = no bound. */
+function getAreaRange() { return getRange("filter-area-min", "filter-area-max"); }
+
+function acresOf(lake) {
+  return lake.area_km2 == null ? null : lake.area_km2 * KM2_TO_ACRES;
+}
+
+/**
+ * Does a lake pass the shared area filter? A lake with no NHD area data can't
+ * be verified against the filter, so it's excluded when the filter is active.
+ */
+function lakePassesAreaFilter(lake) {
+  const { min, max } = getAreaRange();
+  if (min === null && max === null) return true;
+  const ac = acresOf(lake);
+  if (ac === null) return false;
+  return (min === null || ac >= min) && (max === null || ac <= max);
+}
+
+function formatAcres(km2) {
+  if (km2 == null) return "—";
+  const ac = km2 * KM2_TO_ACRES;
+  if (ac < 1) return "<1";
+  if (ac < 10) return ac.toFixed(1);
+  return Math.round(ac).toLocaleString("en-US");
+}
+
+/** Human-readable summary of the active shared filters, for status lines. */
+function describeActiveFilters() {
+  const parts = [];
+  const months = getActiveMonths();
+  if (months.length < 12) parts.push("months: " + months.map((m) => MONTH_ABBR[m - 1]).join(", "));
+  const t = getTempRange();
+  if (t.min !== null || t.max !== null) parts.push(`temp ${t.min ?? "…"}–${t.max ?? "…"}°F`);
+  const a = getAreaRange();
+  if (a.min !== null || a.max !== null) parts.push(`area ${a.min ?? "…"}–${a.max ?? "…"} acres`);
+  return parts.length ? " Filters: " + parts.join("; ") + "." : "";
+}
+
+/**
+ * Per-day info for month/temperature filtering: Map of "YYYY-MM-DD" ->
+ * { month, meanTemp }. In hourly mode the daily mean is derived from the 24
+ * hourly temperature values; otherwise it comes straight from the API.
+ */
+function computeDayInfo(data, needTemp) {
+  const days = new Map();
+  data.time.forEach((t, i) => {
+    const dk = t.slice(0, 10);
+    let d = days.get(dk);
+    if (!d) {
+      d = { month: parseInt(dk.slice(5, 7), 10), temps: [] };
+      days.set(dk, d);
+    }
+    if (needTemp) {
+      const v = (data.values["temperature_2m"] || [])[i];
+      if (v !== null && v !== undefined && !Number.isNaN(v)) d.temps.push(v);
+    }
+  });
+  const out = new Map();
+  for (const [dk, d] of days) {
+    out.set(dk, {
+      month: d.month,
+      meanTemp: d.temps.length ? d.temps.reduce((s, x) => s + x, 0) / d.temps.length : null,
+    });
+  }
+  return out;
+}
+
+/** Copy of the dataset containing only the given "YYYY-MM-DD" day keys. */
+function filterDataToDays(data, keepDays) {
+  const idx = [];
+  data.time.forEach((t, i) => { if (keepDays.has(t.slice(0, 10))) idx.push(i); });
+  const values = {};
+  for (const k of Object.keys(data.values)) values[k] = idx.map((i) => data.values[k][i]);
+  return { time: idx.map((i) => data.time[i]), values, resolution: data.resolution };
+}
+
 // ---------------------------------------------------------------- load
 
 function selectedVariables() {
@@ -288,6 +395,19 @@ async function onLoad() {
   let vars = selectedVariables();
   if (vars.length === 0) { setStatus("Please select at least one variable.", true); return; }
 
+  const months = getActiveMonths();
+  if (!months.length) { setStatus("Select at least one month in the Months filter.", true); return; }
+
+  if (!lakePassesAreaFilter(lake)) {
+    const ac = acresOf(lake);
+    const r = getAreaRange();
+    setStatus(
+      `${lake.name} is ${ac === null ? "missing area data" : "about " + formatAcres(lake.area_km2) + " acres"}` +
+      ` — outside the area filter (${r.min ?? "any"}–${r.max ?? "any"} acres).`,
+      true);
+    return;
+  }
+
   const provider = $("provider").value;
   const aggregation = $("aggregation").value;
 
@@ -304,22 +424,50 @@ async function onLoad() {
   }
   const params = vars.map((v) => v.param);
 
+  // The temperature filter needs temperature data even when it's unchecked —
+  // fetch it silently and keep it out of the displayed variables.
+  const tempRange = getTempRange();
+  const tempActive = tempRange.min !== null || tempRange.max !== null;
+  const fetchParams = [...params];
+  if (tempActive && !fetchParams.includes("temperature_2m")) fetchParams.push("temperature_2m");
+
   const btn = $("load-btn");
   btn.disabled = true;
   btn.textContent = "Loading…";
   setStatus(`Fetching ${provider === "open-meteo" ? "Open-Meteo" : "Meteostat"} data for ${lake.name}…`);
 
   try {
-    const data = await fetchWeather(provider, lake.lat, lake.lon, start, end, params, aggregation);
+    const data = await fetchWeather(provider, lake.lat, lake.lon, start, end, fetchParams, aggregation);
     if (!data.time.length) throw new Error("No data returned for this date range.");
 
-    const buckets = aggregate(data, vars, aggregation);
-    renderStatCards(data, vars);
+    // Shared month + temperature filters: keep whole days whose month is
+    // selected and whose daily mean temperature is in range (hourly mode
+    // derives the daily mean from the 24 hourly values).
+    const dayInfo = computeDayInfo(data, tempActive);
+    const keepDays = new Set();
+    for (const [dk, info] of dayInfo) {
+      if (!months.includes(info.month)) continue;
+      if (tempActive) {
+        const t = info.meanTemp;
+        if (t === null || t === undefined) continue;
+        if (tempRange.min !== null && t < tempRange.min) continue;
+        if (tempRange.max !== null && t > tempRange.max) continue;
+      }
+      keepDays.add(dk);
+    }
+    if (!keepDays.size) throw new Error("No days in the selected range match the month/temperature filters.");
+    const fdata = filterDataToDays(data, keepDays);
+
+    const buckets = aggregate(fdata, vars, aggregation);
+    renderStatCards(fdata, vars);
     renderLineChart(buckets, vars, aggregation);
     buildTable(buckets, vars);
-    renderWindRose(data);
+    renderWindRose(fdata);
 
-    let msg = `Loaded ${buckets.length} ${aggregation} period${buckets.length === 1 ? "" : "s"} for ${lake.name} (${start} to ${end}).`;
+    $("visuals").hidden = false;
+
+    let msg = `Loaded ${buckets.length} ${aggregation} period${buckets.length === 1 ? "" : "s"} for ${lake.name} (${start} to ${end}).` +
+      describeActiveFilters();
     if (skipped.length) {
       msg += ` Skipped ${skipped.map((v) => v.label).join(", ")} (hourly aggregation only).`;
     }

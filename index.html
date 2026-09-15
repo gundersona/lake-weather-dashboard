@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
-  <link rel="stylesheet" href="css/styles.css?v=5">
+  <link rel="stylesheet" href="css/styles.css?v=6">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
@@ -58,6 +58,51 @@
           </div>
         </div>
 
+        <fieldset id="month-filter">
+          <legend>Months</legend>
+          <div class="month-grid">
+            <label class="month-pill"><input type="checkbox" data-month="1" checked>Jan</label>
+            <label class="month-pill"><input type="checkbox" data-month="2" checked>Feb</label>
+            <label class="month-pill"><input type="checkbox" data-month="3" checked>Mar</label>
+            <label class="month-pill"><input type="checkbox" data-month="4" checked>Apr</label>
+            <label class="month-pill"><input type="checkbox" data-month="5" checked>May</label>
+            <label class="month-pill"><input type="checkbox" data-month="6" checked>Jun</label>
+            <label class="month-pill"><input type="checkbox" data-month="7" checked>Jul</label>
+            <label class="month-pill"><input type="checkbox" data-month="8" checked>Aug</label>
+            <label class="month-pill"><input type="checkbox" data-month="9" checked>Sep</label>
+            <label class="month-pill"><input type="checkbox" data-month="10" checked>Oct</label>
+            <label class="month-pill"><input type="checkbox" data-month="11" checked>Nov</label>
+            <label class="month-pill"><input type="checkbox" data-month="12" checked>Dec</label>
+          </div>
+          <div class="month-actions">
+            <button type="button" id="months-all">All</button>
+            <span aria-hidden="true">·</span>
+            <button type="button" id="months-none">None</button>
+          </div>
+        </fieldset>
+
+        <div class="filter-row">
+          <div>
+            <label for="filter-temp-min">Min temp (°F)</label>
+            <input type="number" id="filter-temp-min" step="any" placeholder="Any">
+          </div>
+          <div>
+            <label for="filter-temp-max">Max temp (°F)</label>
+            <input type="number" id="filter-temp-max" step="any" placeholder="Any">
+          </div>
+        </div>
+        <div class="filter-row">
+          <div>
+            <label for="filter-area-min">Min area (acres)</label>
+            <input type="number" id="filter-area-min" min="0" step="any" placeholder="Any">
+          </div>
+          <div>
+            <label for="filter-area-max">Max area (acres)</label>
+            <input type="number" id="filter-area-max" min="0" step="any" placeholder="Any">
+          </div>
+        </div>
+        <p class="empty-note">Months, temperature, and area filters apply to both weather loading and lake analysis. Temperature keeps whole days whose daily mean is in range.</p>
+
         <label for="aggregation">Aggregation</label>
         <select id="aggregation">
           <option value="hourly">Hourly (past year)</option>
@@ -81,7 +126,7 @@
       </div>
     </aside>
 
-    <section id="visuals" aria-label="Weather visualizations">
+    <section id="visuals" aria-label="Weather visualizations" hidden>
       <div class="card">
         <h2>Summary</h2>
         <div id="stat-cards"></div>
@@ -115,7 +160,7 @@
 
       <div class="card" id="analysis-card">
         <h2>Lake analysis</h2>
-        <p class="card-sub">Rank lakes by average wind speed over a period — for example, find the calmest lakes in a state. Wind data is fetched for every lake in batches, so this fits long, monthly-style periods.</p>
+        <p class="card-sub">Rank lakes by average wind speed — for example, find the calmest lakes in a state. Uses the date range, months, and temperature/area filters from Controls above. Wind data is fetched for every lake in batches, so this fits long, monthly-style periods.</p>
         <div class="analysis-controls">
           <div>
             <label for="analysis-scope">Lakes</label>
@@ -123,14 +168,6 @@
               <option value="state">Selected state</option>
               <option value="all">All states (slow — downloads ~19&nbsp;MB)</option>
             </select>
-          </div>
-          <div>
-            <label for="analysis-start">From</label>
-            <input type="date" id="analysis-start" min="1940-01-01">
-          </div>
-          <div>
-            <label for="analysis-end">To</label>
-            <input type="date" id="analysis-end" min="1940-01-01">
           </div>
           <div>
             <label for="analysis-dir">Order</label>
@@ -147,14 +184,6 @@
               <option value="50">Top 50</option>
               <option value="100">Top 100</option>
             </select>
-          </div>
-          <div>
-            <label for="analysis-min-area">Min area (acres)</label>
-            <input type="number" id="analysis-min-area" min="0" step="any" placeholder="Any">
-          </div>
-          <div>
-            <label for="analysis-max-area">Max area (acres)</label>
-            <input type="number" id="analysis-max-area" min="0" step="any" placeholder="Any">
           </div>
           <div class="analysis-actions">
             <button id="analysis-run" type="button">Rank lakes</button>
@@ -183,7 +212,7 @@
   <script src="js/config.js" defer></script>
   <script src="js/providers.js" defer></script>
   <script src="js/lakes.js?v=1" defer></script>
-  <script src="js/app.js?v=4" defer></script>
-  <script src="js/analysis.js?v=3" defer></script>
+  <script src="js/app.js?v=5" defer></script>
+  <script src="js/analysis.js?v=4" defer></script>
 </body>
 </html>
