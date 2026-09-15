@@ -10,6 +10,7 @@ const ANALYSIS_BATCH = 100;
 const ANALYSIS_CONCURRENCY = 4;
 const ANALYSIS_FILE_CONCURRENCY = 8;
 const ANALYSIS_MIN_DATE = "1940-01-01";
+const KM2_TO_ACRES = 247.105; // NHD areas are stored as km^2; the UI filters in acres.
 
 let analysisRunning = false;
 let analysisAborter = null;
@@ -158,6 +159,25 @@ async function runAnalysis() {
     }
     if (signal.aborted) return;
 
+    // Optional surface-area filter. Lakes with no NHD area data can't be
+    // verified against the filter, so they're excluded when it's active.
+    const minAcres = parseFloat($("analysis-min-area").value);
+    const maxAcres = parseFloat($("analysis-max-area").value);
+    let areaExcluded = 0;
+    if (!isNaN(minAcres) || !isNaN(maxAcres)) {
+      const before = lakes.length;
+      lakes = lakes.filter((l) => {
+        if (l.area_km2 == null) return false;
+        const ac = l.area_km2 * KM2_TO_ACRES;
+        return (isNaN(minAcres) || ac >= minAcres) && (isNaN(maxAcres) || ac <= maxAcres);
+      });
+      areaExcluded = before - lakes.length;
+    }
+    if (!lakes.length) {
+      setAnalysisStatus("No lakes match the area filter.", true);
+      return;
+    }
+
     const dir = $("analysis-dir").value;
     const topN = parseInt($("analysis-top").value, 10) || 25;
     const batches = [];
@@ -193,9 +213,12 @@ async function runAnalysis() {
     results.sort((a, b) => (dir === "asc" ? a.mean - b.mean : b.mean - a.mean));
     renderAnalysisTable(results.slice(0, topN), scope === "all");
     $("analysis-table-wrap").hidden = false;
+    const notes = [];
+    if (areaExcluded) notes.push(`${areaExcluded.toLocaleString()} excluded by the area filter`);
+    if (failed) notes.push(`${failed.toLocaleString()} had no usable data`);
     setAnalysisStatus(
       `Ranked ${results.length.toLocaleString()} lakes by average wind, ${start} to ${end}` +
-      (failed ? ` — ${failed.toLocaleString()} had no usable data.` : "."));
+      (notes.length ? " — " + notes.join("; ") + "." : "."));
   } catch (err) {
     if (!signal.aborted) {
       setAnalysisStatus(err.message || "Analysis failed.", true);
@@ -212,6 +235,14 @@ async function runAnalysis() {
   }
 }
 
+function formatAcres(km2) {
+  if (km2 == null) return "—";
+  const ac = km2 * KM2_TO_ACRES;
+  if (ac < 1) return "<1";
+  if (ac < 10) return ac.toFixed(1);
+  return Math.round(ac).toLocaleString("en-US");
+}
+
 function renderAnalysisTable(rows, showState) {
   const thead = document.querySelector("#analysis-table thead");
   const tbody = document.querySelector("#analysis-table tbody");
@@ -219,7 +250,7 @@ function renderAnalysisTable(rows, showState) {
   tbody.innerHTML = "";
   const cols = ["#", "Lake", "County"];
   if (showState) cols.push("State");
-  cols.push("Avg wind (mph)", "");
+  cols.push("Area (acres)", "Avg wind (mph)", "");
   const headRow = document.createElement("tr");
   for (const c of cols) {
     const th = document.createElement("th");
@@ -232,6 +263,7 @@ function renderAnalysisTable(rows, showState) {
     const tr = document.createElement("tr");
     const cells = [String(i + 1), r.lake.name, r.lake.county || "—"];
     if (showState) cells.push(r.lake.state);
+    cells.push(formatAcres(r.lake.area_km2));
     cells.push(r.mean.toFixed(1));
     for (const c of cells) {
       const td = document.createElement("td");

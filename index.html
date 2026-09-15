@@ -148,6 +148,14 @@
               <option value="100">Top 100</option>
             </select>
           </div>
+          <div>
+            <label for="analysis-min-area">Min area (acres)</label>
+            <input type="number" id="analysis-min-area" min="0" step="any" placeholder="Any">
+          </div>
+          <div>
+            <label for="analysis-max-area">Max area (acres)</label>
+            <input type="number" id="analysis-max-area" min="0" step="any" placeholder="Any">
+          </div>
           <div class="analysis-actions">
             <button id="analysis-run" type="button">Rank lakes</button>
             <button id="analysis-cancel" type="button" hidden>Cancel</button>
@@ -169,13 +177,13 @@
   </main>
 
   <footer>
-    <p>Data: <a href="https://open-meteo.com/">Open-Meteo</a> (ERA5 reanalysis, interpolated to lake coordinates). Lake locations: USGS GNIS.</p>
+    <p>Data: <a href="https://open-meteo.com/">Open-Meteo</a> (ERA5 reanalysis, interpolated to lake coordinates). Lake locations: USGS GNIS. Lake areas: USGS NHD.</p>
   </footer>
 
   <script src="js/config.js" defer></script>
   <script src="js/providers.js" defer></script>
   <script src="js/lakes.js?v=1" defer></script>
   <script src="js/app.js?v=4" defer></script>
-  <script src="js/analysis.js?v=2" defer></script>
+  <script src="js/analysis.js?v=3" defer></script>
 </body>
 </html>

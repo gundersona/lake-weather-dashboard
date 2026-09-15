@@ -182,12 +182,23 @@ def parse_lakes(path: Path, max_per_state: int | None):
 
 def write_output(by_state: dict[str, list[dict]], out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
+    # Merge NHD surface areas when available (scripts/nhd_areas.json).
+    areas = {}
+    areas_path = Path(__file__).resolve().parent / "nhd_areas.json"
+    if areas_path.exists():
+        areas = json.loads(areas_path.read_text(encoding="utf-8"))
+        print(f"  merging NHD surface areas for {len(areas)} features")
     index = {"states": {}}
     total = 0
     for state in sorted(by_state):
         lakes = by_state[state]
         if not lakes:
             continue
+        if areas:
+            for lake in lakes:
+                fid = lake["id"].rsplit("-", 1)[1]
+                if fid in areas:
+                    lake["area_km2"] = round(areas[fid], 4)
         fname = f"{state.lower()}.json"
         with open(out_dir / fname, "w", encoding="utf-8") as f:
             json.dump(lakes, f, ensure_ascii=False)
