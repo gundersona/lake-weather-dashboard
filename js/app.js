@@ -126,9 +126,11 @@ function setDefaultDates() {
   const d = (daysAgo) => {
     const t = new Date();
     t.setDate(t.getDate() - daysAgo);
-    return t.toISOString().slice(0, 10);
+    const mm = String(t.getMonth() + 1).padStart(2, "0");
+    const dd = String(t.getDate()).padStart(2, "0");
+    return `${t.getFullYear()}-${mm}-${dd}`;
   };
-  $("end-date").value = d(10);
+  $("end-date").value = d(0); // "To" always defaults to the current date on load
   $("start-date").value = d(40);
 }
 
@@ -390,7 +392,7 @@ async function onLoad() {
 
   const start = $("start-date").value;
   const end = $("end-date").value;
-  if (!start || !end) { setStatus("Please choose both a start and an end date.", true); return; }
+  if (!start || !end) { setStatus("Please choose both a From and a To date.", true); return; }
 
   let vars = selectedVariables();
   if (vars.length === 0) { setStatus("Please select at least one variable.", true); return; }

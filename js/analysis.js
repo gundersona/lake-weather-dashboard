@@ -131,14 +131,14 @@ async function runAnalysis() {
   let start = $("start-date").value;
   let end = $("end-date").value;
   if (!start || !end) {
-    setAnalysisStatus("Choose both a start and an end date in Controls.", true);
+    setAnalysisStatus("Choose both a From and a To date in Controls.", true);
     return;
   }
   if (start < ANALYSIS_MIN_DATE) start = ANALYSIS_MIN_DATE;
   const maxEnd = maxEndDate();
   if (end > maxEnd) end = maxEnd;
   if (start > end) {
-    setAnalysisStatus("Start date must be on or before the end date.", true);
+    setAnalysisStatus("From date must be on or before the To date.", true);
     return;
   }
 

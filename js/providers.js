@@ -132,14 +132,14 @@ async function fetchOpenMeteo(lat, lon, start, end, params, aggregation = "hourl
     throw new Error(`Unknown aggregation: ${aggregation}.`);
   }
   if (start < MIN_START) {
-    throw new Error(`Start date must be on or after ${MIN_START} (archive data begins in 1940).`);
+    throw new Error(`From date must be on or after ${MIN_START} (archive data begins in 1940).`);
   }
   const maxEnd = maxEndDate();
   if (end > maxEnd) {
-    throw new Error(`End date must be no later than ${maxEnd} (archive data lags ~5 days).`);
+    throw new Error(`To date must be no later than ${maxEnd} (archive data lags ~5 days).`);
   }
   if (start > end) {
-    throw new Error("Start date must be before the end date.");
+    throw new Error("From date must be before the To date.");
   }
 
   if (aggregation === "hourly") {

@@ -392,8 +392,3 @@ footer a { color: var(--accent); }
 
   .check { padding: 0.6rem 0; }
 }
-
-@media (max-width: 420px) {
-  /* Very narrow phones: stack the date inputs for roomier touch targets. */
-  .date-row, .filter-row { grid-template-columns: 1fr; }
-}
