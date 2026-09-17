@@ -130,7 +130,7 @@ function setDefaultDates() {
     const dd = String(t.getDate()).padStart(2, "0");
     return `${t.getFullYear()}-${mm}-${dd}`;
   };
-  $("end-date").value = d(0); // "To" always defaults to the current date on load
+  $("end-date").value = d(5); // "To" defaults to 5 days ago: the archive lags ~5 days
   $("start-date").value = d(40);
 }
 
