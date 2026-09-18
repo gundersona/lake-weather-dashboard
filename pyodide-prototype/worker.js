@@ -66,7 +66,9 @@ async function main() {
   // deps=false: Pyodide's stack (pytz 2024.1, pandas 2.2.0) already satisfies
   // meteostat at runtime; its metadata pins (pytz<2024.0, pandas>=2.3.0)
   // conflict with the prebuilt stack and would abort the install.
-  await micropip.install(WHEEL_URL, deps=false);
+  // Positional: install(requirements, keep_going, deps). JS has no kwargs,
+  // so micropip.install(url, deps=false) would silently misassign.
+  await micropip.install(WHEEL_URL, false, false);
   var ver = pyodide.runPython("import meteostat; meteostat.__version__");
   log("meteostat", "meteostat " + ver + " installed, took " + secs(t2) + "s");
 
