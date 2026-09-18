@@ -56,9 +56,14 @@ async function main() {
   log("init", "runtime ready, total " + secs(performance.now()) + "s");
 
   var t1 = performance.now();
-  log("packages", "loadPackage numpy/pandas/pytz/requests/micropip/sqlite3");
-  await pyodide.loadPackage(["numpy", "pandas", "pytz", "requests", "micropip", "sqlite3"]);
+  log("packages", "loadPackage numpy/pandas/pytz/requests/micropip/sqlite3/pyodide-http");
+  await pyodide.loadPackage(["numpy", "pandas", "pytz", "requests", "micropip", "sqlite3", "pyodide-http"]);
   log("packages", "stack ready, took " + secs(t1) + "s");
+
+  // Route Python HTTP (requests) through the browser's fetch/XHR, otherwise
+  // meteostat's downloads fail inside the WASM runtime.
+  pyodide.pyimport("pyodide_http").patch_all();
+  log("packages", "pyodide_http.patch_all() applied");
 
   var t2 = performance.now();
   log("meteostat", "micropip installing vendored wheel (same origin, deps already loaded)");
