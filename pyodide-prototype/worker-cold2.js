@@ -96,6 +96,8 @@ async function main() {
   log("coredl", "core runtime + sqlite3 cold download: " + (coreBytes/1048576).toFixed(1) + " MB in " + dur(tCore) + "s");
 
   var tB = performance.now();
+  await pyodide.loadPackage("micropip"); // bootstrap: micropip not in base runtime
+  log("packages", "micropip bootstrapped via loadPackage (tiny, ~0.05 MB, cached here)");
   var micropip = pyodide.pyimport("micropip");
   var pkgBytes = 0;
   log("packages", "micropip installing 13 wheels cold (?cold=2), dependency order, deps=false");
