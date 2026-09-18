@@ -56,8 +56,8 @@ async function main() {
   log("init", "runtime ready, total " + secs(performance.now()) + "s");
 
   var t1 = performance.now();
-  log("packages", "loadPackage numpy/pandas/pytz/requests/micropip");
-  await pyodide.loadPackage(["numpy", "pandas", "pytz", "requests", "micropip"]);
+  log("packages", "loadPackage numpy/pandas/pytz/requests/micropip/sqlite3");
+  await pyodide.loadPackage(["numpy", "pandas", "pytz", "requests", "micropip", "sqlite3"]);
   log("packages", "stack ready, took " + secs(t1) + "s");
 
   var t2 = performance.now();
