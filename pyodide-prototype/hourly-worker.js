@@ -12,19 +12,22 @@ function log(stage, msg) {
 var PY_QUERY =
   "from datetime import datetime, timedelta, timezone\n" +
   "import json\n" +
+  "import pandas as pd\n" +
   "import meteostat as ms\n" +
   "ms.config.stations_db_endpoints = [\"" + STATIONS_DB_URL + "\"]\n" +
   "POINT = ms.Point(43.1067, -89.4012, 259)\n" +
   "stations_df = ms.stations.nearby(POINT, limit=4)\n" +
-  "end = datetime.now()\n" +
+  "end = datetime.now().replace(minute=0, second=0, microsecond=0)\n" +
   "start = end - timedelta(days=7)\n" +
   "ts = ms.hourly(stations_df, start, end)\n" +
   "dfh = ms.interpolate(ts, POINT).fetch()\n" +
   "mx = dfh.index.max()\n" +
-  "now = datetime.now(timezone.utc)\n" +
-  "lag_h = (now - mx.tz_convert('UTC').to_pydatetime()).total_seconds() / 3600\n" +
   "st = stations_df.reset_index()\n" +
   "ids = st['id'].tolist() if 'id' in st.columns else st.index.astype(str).tolist()\n" +
+  "sttz = st['timezone'].iloc[0] if 'timezone' in st.columns else 'America/Chicago'\n" +
+  "mx_utc = pd.Timestamp(mx).tz_localize(sttz).tz_convert('UTC') if mx.tzinfo is None else mx.tz_convert('UTC')\n" +
+  "now = datetime.now(timezone.utc)\n" +
+  "lag_h = (now - mx_utc.to_pydatetime()).total_seconds() / 3600\n" +
   "payload = {\n" +
   "    'station_ids': ids,\n" +
   "    'hourly_rows': int(len(dfh)),\n" +
