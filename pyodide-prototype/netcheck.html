@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>netcheck (temporary)</title></head>
+<body>
+<pre id="out">RUNNING</pre>
+<script>
+async function check(url) {
+  try {
+    const r = await fetch(url, {method: 'HEAD'});
+    return url + ' -> STATUS ' + r.status + ' ACAO: ' + r.headers.get('access-control-allow-origin');
+  } catch (e) {
+    return url + ' -> ERROR: ' + e;
+  }
+}
+(async () => {
+  const urls = [
+    'https://data.meteostat.net/stations.db',
+    'https://raw.githubusercontent.com/meteostat/weather-stations/master/stations.db',
+    'https://data.meteostat.net/daily/2024/72572.csv.gz'
+  ];
+  let out = '';
+  for (const u of urls) { out += await check(u) + '\n'; }
+  document.getElementById('out').textContent = out;
+})();
+</script>
+</body>
+</html>
