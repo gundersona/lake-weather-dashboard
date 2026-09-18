@@ -1,0 +1,165 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meteostat JS-only comparison (temporary)</title>
+<style>
+body { font-family: monospace; margin: 16px; }
+#status { font-weight: bold; padding: 8px; background: #eee; }
+#log { white-space: pre-wrap; background: #111; color: #0f0; padding: 12px; max-height: 40vh; overflow: auto; }
+#results pre { white-space: pre-wrap; background: #f6f6f6; padding: 12px; }
+</style>
+</head>
+<body>
+<h1>Meteostat JS-only comparison (temporary test page)</h1>
+<div id="status">RUNNING</div>
+<h2>Log</h2>
+<pre id="log"></pre>
+<h2>Results</h2>
+<div id="results"></div>
+<script>
+// TEMPORARY PROTOTYPE - will be removed after measurement.
+// Pure-JS port of meteostat's library-side interpolate() for the daily path:
+//   haversine distance, effective distance with elevation_weight=10,
+//   IDW power=2 (both stations > 5km away so nearest-neighbor never triggers),
+//   lapse-rate skipped here because max station elevation diff (24m) < 50m
+//   threshold (same as the library would decide), categorical cldc from the
+//   nearest station. Stations are the 2 the real library found near the point.
+var logEl = document.getElementById("log");
+var statusEl = document.getElementById("status");
+var resultsEl = document.getElementById("results");
+var t0 = performance.now();
+function addLog(msg) {
+  var s = ((performance.now() - t0) / 1000).toFixed(1);
+  logEl.textContent += "[" + s + "s] " + msg + "\n";
+}
+
+var POINT = { lat: 43.1067, lon: -89.4012, elev: 259 }; // Lake Mendota
+var STATIONS = [
+  { id: "KC290", lat: 43.1143, lon: -89.5315, elev: 283 },
+  { id: "72641", lat: 43.1333, lon: -89.0167, elev: 263 }
+];
+var PARAMS = ["temp","tmin","tmax","rhum","prcp","snwd","wspd","wpgt","pres","tsun","cldc"];
+var CATEGORICAL = { cldc: true };
+var ELEVATION_WEIGHT = 10, POWER = 2;
+
+function haversine(lat1, lon1, lat2, lon2) {
+  var R = 6371000, dLa = (lat2-lat1)*Math.PI/180, dLo = (lon2-lon1)*Math.PI/180;
+  var a = Math.sin(dLa/2)*Math.sin(dLa/2) +
+          Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180) *
+          Math.sin(dLo/2)*Math.sin(dLo/2);
+  return 2*R*Math.asin(Math.sqrt(a));
+}
+
+async function fetchStation(id, year) {
+  var t = performance.now();
+  var url = "https://data.meteostat.net/daily/" + year + "/" + id + ".csv.gz";
+  var res = await fetch(url);
+  if (!res.ok) throw new Error("fetch failed " + res.status + " for " + url);
+  var buf = await res.arrayBuffer();
+  var text = await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+  var lines = text.trim().split("\n");
+  var head = lines[0].split(",");
+  var idx = {};
+  head.forEach(function(h, i) { idx[h] = i; });
+  var rows = {};
+  for (var i = 1; i < lines.length; i++) {
+    var c = lines[i].split(",");
+    var key = c[idx.year] + "-" + String(c[idx.month]).padStart(2,"0") + "-" + String(c[idx.day]).padStart(2,"0");
+    var row = {};
+    PARAMS.forEach(function(p) {
+      var v = c[idx[p]];
+      row[p] = (v === undefined || v === "") ? null : parseFloat(v);
+    });
+    rows[key] = row;
+  }
+  addLog("station " + id + " " + year + ": " + Object.keys(rows).length + " rows in " + ((performance.now()-t)/1000).toFixed(1) + "s");
+  return rows;
+}
+
+function dateRange(a, b) {
+  var out = [], d = new Date(a + "T00:00:00Z"), e = new Date(b + "T00:00:00Z");
+  while (d <= e) { out.push(d.toISOString().slice(0,10)); d.setUTCDate(d.getUTCDate()+1); }
+  return out;
+}
+
+async function main() {
+  var tF = performance.now();
+  addLog("fetching 4 station-year CSVs");
+  var data = {};
+  for (var s = 0; s < STATIONS.length; s++) {
+    var st = STATIONS[s];
+    data[st.id] = {
+      "2024": await fetchStation(st.id, 2024),
+      "2026": await fetchStation(st.id, 2026)
+    };
+  }
+  addLog("all CSVs fetched+parsed in " + ((performance.now()-tF)/1000).toFixed(1) + "s");
+
+  // effective distances (same formula as meteostat)
+  STATIONS.forEach(function(st) {
+    var d = haversine(POINT.lat, POINT.lon, st.lat, st.lon);
+    var ed = Math.abs(st.elev - POINT.elev);
+    st.dist = d;
+    st.effDist = Math.sqrt(d*d + Math.pow(ed*ELEVATION_WEIGHT, 2));
+    addLog("station " + st.id + ": dist " + (d/1000).toFixed(1) + " km, elevDiff " + ed + " m");
+  });
+
+  var tI = performance.now();
+  function interpolate(dates, yearKey) {
+    return dates.map(function(date) {
+      var row = { time: date };
+      PARAMS.forEach(function(p) {
+        var vals = [];
+        STATIONS.forEach(function(st) {
+          var r = data[st.id][yearKey][date];
+          var v = r ? r[p] : null;
+          if (v !== null && !isNaN(v)) vals.push({ v: v, st: st });
+        });
+        if (!vals.length) { row[p] = null; return; }
+        if (CATEGORICAL[p]) { // nearest station, like the library
+          vals.sort(function(a,b){ return a.st.dist - b.st.dist; });
+          row[p] = vals[0].v; return;
+        }
+        var wsum = 0, vsum = 0;
+        vals.forEach(function(x) { var w = 1/Math.pow(x.st.effDist, POWER); wsum += w; vsum += w*x.v; });
+        var v = vsum/wsum;
+        row[p] = Math.round(v*10)/10; // 1-decimal, matches library rounding
+      });
+      return row;
+    });
+  }
+  var yearRows = interpolate(dateRange("2024-01-01","2024-12-31"), "2024");
+  var today = new Date();
+  var end = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()-2)).toISOString().slice(0,10);
+  var start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()-31)).toISOString().slice(0,10);
+  var recentRows = interpolate(dateRange(start, end), "2026");
+  addLog("interpolated " + yearRows.length + " + " + recentRows.length + " rows in " + ((performance.now()-tI)/1000).toFixed(1) + "s");
+
+  var bytes = 0, resCount = 0;
+  try {
+    var entries = performance.getEntriesByType("resource");
+    for (var i = 0; i < entries.length; i++) { resCount++; bytes += entries[i].transferSize || 0; }
+  } catch (err) {}
+  var payload = {
+    year_rows: yearRows.length,
+    year_first_date: yearRows[0].time,
+    year_last_date: yearRows[yearRows.length-1].time,
+    year_sample: yearRows.slice(0,5),
+    recent_rows: recentRows.length,
+    recent_max_date: recentRows[recentRows.length-1].time,
+    recent_sample: recentRows.slice(0,5)
+  };
+  addLog("TOTAL " + ((performance.now()-t0)/1000).toFixed(1) + "s, transferred " + (bytes/1048576).toFixed(2) + " MB across " + resCount + " resources");
+  resultsEl.innerHTML = "<pre>" + JSON.stringify(payload, null, 1).slice(0, 6000) + "</pre>";
+  statusEl.textContent = "PROTOTYPE DONE";
+}
+
+main().catch(function(err) {
+  addLog("ERROR: " + String((err && err.message) || err));
+  statusEl.textContent = "PROTOTYPE FAILED";
+});
+</script>
+</body>
+</html>
