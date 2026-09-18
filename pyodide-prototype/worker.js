@@ -3,17 +3,23 @@
 var PYODIDE_VERSION = "v0.26.1";
 var INDEX_URL = "https://cdn.jsdelivr.net/pyodide/" + PYODIDE_VERSION + "/full/";
 var WHEEL_URL = "https://gundersona.github.io/lake-weather-dashboard/pyodide-prototype/meteostat-2.1.5-py3-none-any.whl";
+// Same-origin stations database (32.5 MB), vendored for this prototype run.
+// Set to null to use Meteostat's remote stations.db endpoints instead.
+var STATIONS_DB_URL = "stations.db";
 
 function log(stage, msg) {
   postMessage({ type: "log", stage: stage, msg: msg });
 }
 
+// NOTE: "__STATIONS_DB__" is replaced at build time with a Python line that
+// points meteostat at the same-origin stations.db, or "" for the remote path.
 var PY_QUERY =
   "from datetime import date, timedelta\n" +
   "import json\n" +
   "import numpy as np\n" +
   "import pandas as pd\n" +
   "import meteostat as ms\n" +
+  "__STATIONS_DB__" +
   "POINT = ms.Point(43.1067, -89.4012, 259)\n" +
   "stations_df = ms.stations.nearby(POINT, limit=4)\n" +
   "def frame_to_records(df, n=5):\n" +
@@ -44,28 +50,35 @@ var PY_QUERY =
   "}\n" +
   "json.dumps(payload)\n";
 
+if (STATIONS_DB_URL) {
+  PY_QUERY = PY_QUERY.replace("__STATIONS_DB__", "ms.config.stations_db_endpoints = [\"" + STATIONS_DB_URL + "\"]\n");
+} else {
+  PY_QUERY = PY_QUERY.replace("__STATIONS_DB__", "");
+}
+
 async function main() {
   var t0 = performance.now();
-  function secs(t) { return ((t - t0) / 1000).toFixed(1); }
+  function dur(tStart) { return ((performance.now() - tStart) / 1000).toFixed(1); }
 
   log("init", "importScripts pyodide.js");
   importScripts(INDEX_URL + "pyodide.js");
 
+  var tA = performance.now();
   log("init", "loadPyodide()");
   var pyodide = await loadPyodide({ indexURL: INDEX_URL });
-  log("init", "runtime ready, total " + secs(performance.now()) + "s");
+  log("init", "runtime ready in " + dur(tA) + "s");
 
-  var t1 = performance.now();
+  var tB = performance.now();
   log("packages", "loadPackage numpy/pandas/pytz/requests/micropip/sqlite3/pyodide-http");
   await pyodide.loadPackage(["numpy", "pandas", "pytz", "requests", "micropip", "sqlite3", "pyodide-http"]);
-  log("packages", "stack ready, took " + secs(t1) + "s");
+  log("packages", "stack ready in " + dur(tB) + "s");
 
   // Route Python HTTP (requests) through the browser's fetch/XHR, otherwise
   // meteostat's downloads fail inside the WASM runtime.
   pyodide.pyimport("pyodide_http").patch_all();
   log("packages", "pyodide_http.patch_all() applied");
 
-  var t2 = performance.now();
+  var tC = performance.now();
   log("meteostat", "micropip installing vendored wheel (same origin, deps already loaded)");
   var micropip = pyodide.pyimport("micropip");
   // deps=false: Pyodide's stack (pytz 2024.1, pandas 2.2.0) already satisfies
@@ -75,19 +88,19 @@ async function main() {
   // so micropip.install(url, deps=false) would silently misassign.
   await micropip.install(WHEEL_URL, false, false);
   var ver = pyodide.runPython("import meteostat; meteostat.__version__");
-  log("meteostat", "meteostat " + ver + " installed, took " + secs(t2) + "s");
+  log("meteostat", "meteostat " + ver + " installed in " + dur(tC) + "s");
 
-  var t3 = performance.now();
+  var tD = performance.now();
   log("query", "stations.nearby + daily(2024) + interpolate, Lake Mendota");
   var jsonStr = pyodide.runPython(PY_QUERY);
-  log("query", "query finished, took " + secs(t3) + "s");
+  log("query", "query finished in " + dur(tD) + "s");
 
   var bytes = 0, resCount = 0;
   try {
     var entries = performance.getEntriesByType("resource");
     for (var i = 0; i < entries.length; i++) { resCount++; bytes += entries[i].transferSize || 0; }
   } catch (err) { /* resource timing unavailable */ }
-  postMessage({ type: "done", totalSec: secs(performance.now()), bytes: bytes, resCount: resCount, payload: jsonStr });
+  postMessage({ type: "done", totalSec: ((performance.now() - t0) / 1000).toFixed(1), bytes: bytes, resCount: resCount, payload: jsonStr });
 }
 
 main().catch(function(err) {
