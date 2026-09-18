@@ -61,9 +61,12 @@ async function main() {
   log("packages", "stack ready, took " + secs(t1) + "s");
 
   var t2 = performance.now();
-  log("meteostat", "micropip installing vendored wheel (same origin)");
+  log("meteostat", "micropip installing vendored wheel (same origin, deps already loaded)");
   var micropip = pyodide.pyimport("micropip");
-  await micropip.install(WHEEL_URL);
+  // deps=false: Pyodide's stack (pytz 2024.1, pandas 2.2.0) already satisfies
+  // meteostat at runtime; its metadata pins (pytz<2024.0, pandas>=2.3.0)
+  // conflict with the prebuilt stack and would abort the install.
+  await micropip.install(WHEEL_URL, deps=false);
   var ver = pyodide.runPython("import meteostat; meteostat.__version__");
   log("meteostat", "meteostat " + ver + " installed, took " + secs(t2) + "s");
 
