@@ -1,7 +1,7 @@
 // TEMPORARY PROTOTYPE - will be removed after measurement.
 // Runs the real Meteostat Python library inside Pyodide (WASM) in a Web Worker.
 var PYODIDE_VERSION = "v0.26.1";
-var INDEX_URL = "https://unpkg.com/pyodide@0.26.1/full/"; // unpkg = separate origin, forces full re-download for the cold test
+var INDEX_URL = "https://unpkg.com/pyodide@0.26.1/"; // unpkg = separate origin, forces full re-download for the cold test
 var WHEEL_URL = "https://gundersona.github.io/lake-weather-dashboard/pyodide-prototype/meteostat-2.1.5-py3-none-any.whl?cold=1";
 // Same-origin stations database (32.5 MB), vendored for this prototype run.
 // Set to null to use Meteostat's remote stations.db endpoints instead.
