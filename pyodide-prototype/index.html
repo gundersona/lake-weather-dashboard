@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meteostat Pyodide prototype (temporary)</title>
+<style>
+body { font-family: monospace; margin: 16px; }
+#status { font-weight: bold; padding: 8px; background: #eee; }
+#log { white-space: pre-wrap; background: #111; color: #0f0; padding: 12px; max-height: 40vh; overflow: auto; }
+#results pre { white-space: pre-wrap; background: #f6f6f6; padding: 12px; }
+</style>
+</head>
+<body>
+<h1>Meteostat Pyodide prototype (temporary test page)</h1>
+<div id="status">RUNNING</div>
+<h2>Log</h2>
+<pre id="log"></pre>
+<h2>Results</h2>
+<div id="results"></div>
+<script>
+var logEl = document.getElementById("log");
+var statusEl = document.getElementById("status");
+var resultsEl = document.getElementById("results");
+var t0 = performance.now();
+function addLog(msg) {
+  var s = ((performance.now() - t0) / 1000).toFixed(1);
+  logEl.textContent += "[" + s + "s] " + msg + "\n";
+}
+var w = new Worker("worker.js");
+w.onmessage = function(e) {
+  var d = e.data;
+  if (d.type === "log") {
+    addLog("[" + d.stage + "] " + d.msg);
+  } else if (d.type === "done") {
+    addLog("TOTAL " + d.totalSec + "s, transferred " + (d.bytes / 1048576).toFixed(1) + " MB across " + d.resCount + " resources (includes 0.1 MB vendored wheel)");
+    try {
+      var p = JSON.parse(d.payload);
+      resultsEl.innerHTML = "<pre>" + JSON.stringify(p, null, 1).slice(0, 6000) + "</pre>";
+    } catch (err) {
+      resultsEl.innerHTML = "<pre>payload parse error: " + String(err) + "</pre>";
+    }
+    statusEl.textContent = "PROTOTYPE DONE";
+  } else if (d.type === "error") {
+    addLog("ERROR: " + d.msg);
+    statusEl.textContent = "PROTOTYPE FAILED";
+  }
+};
+w.onerror = function(e) {
+  addLog("WORKER ERROR: " + e.message);
+  statusEl.textContent = "PROTOTYPE FAILED";
+};
+window.addEventListener("error", function(e) { addLog("PAGE ERROR: " + e.message); });
+addLog("worker started");
+</script>
+</body>
+</html>

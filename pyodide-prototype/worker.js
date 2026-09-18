@@ -1,0 +1,85 @@
+// TEMPORARY PROTOTYPE - will be removed after measurement.
+// Runs the real Meteostat Python library inside Pyodide (WASM) in a Web Worker.
+var PYODIDE_VERSION = "v0.26.1";
+var INDEX_URL = "https://cdn.jsdelivr.net/pyodide/" + PYODIDE_VERSION + "/full/";
+var WHEEL_URL = "https://gundersona.github.io/lake-weather-dashboard/pyodide-prototype/meteostat-2.1.5-py3-none-any.whl";
+
+function log(stage, msg) {
+  postMessage({ type: "log", stage: stage, msg: msg });
+}
+
+var PY_QUERY =
+  "from datetime import date, timedelta\n" +
+  "import json\n" +
+  "import numpy as np\n" +
+  "import pandas as pd\n" +
+  "import meteostat as ms\n" +
+  "POINT = ms.Point(43.1067, -89.4012, 259)\n" +
+  "stations_df = ms.stations.nearby(POINT, limit=4)\n" +
+  "def frame_to_records(df, n=5):\n" +
+  "    out = df.reset_index().copy()\n" +
+  "    if 'time' in out.columns:\n" +
+  "        out['time'] = out['time'].dt.strftime('%Y-%m-%d')\n" +
+  "    out = out.where(pd.notnull(out), None)\n" +
+  "    recs = out.head(n).to_dict(orient='records')\n" +
+  "    return json.loads(json.dumps(recs, default=lambda o: float(o) if isinstance(o, (np.integer, np.floating)) else str(o)))\n" +
+  "ts = ms.daily(stations_df, date(2024, 1, 1), date(2024, 12, 31))\n" +
+  "dfy = ms.interpolate(ts, POINT).fetch()\n" +
+  "end = date.today()\n" +
+  "start = end - timedelta(days=30)\n" +
+  "ts2 = ms.daily(stations_df, start, end)\n" +
+  "dfr = ms.interpolate(ts2, POINT).fetch()\n" +
+  "st = stations_df.reset_index()\n" +
+  "ids = st['id'].tolist() if 'id' in st.columns else st.index.astype(str).tolist()\n" +
+  "payload = {\n" +
+  "    'station_ids': ids,\n" +
+  "    'columns': [str(c) for c in dfy.columns],\n" +
+  "    'year_rows': int(len(dfy)),\n" +
+  "    'year_first_date': dfy.index.min().strftime('%Y-%m-%d') if len(dfy) else None,\n" +
+  "    'year_last_date': dfy.index.max().strftime('%Y-%m-%d') if len(dfy) else None,\n" +
+  "    'year_sample': frame_to_records(dfy),\n" +
+  "    'recent_rows': int(len(dfr)),\n" +
+  "    'recent_max_date': dfr.index.max().strftime('%Y-%m-%d') if len(dfr) else None,\n" +
+  "    'recent_sample': frame_to_records(dfr),\n" +
+  "}\n" +
+  "json.dumps(payload)\n";
+
+async function main() {
+  var t0 = performance.now();
+  function secs(t) { return ((t - t0) / 1000).toFixed(1); }
+
+  log("init", "importScripts pyodide.js");
+  importScripts(INDEX_URL + "pyodide.js");
+
+  log("init", "loadPyodide()");
+  var pyodide = await loadPyodide({ indexURL: INDEX_URL });
+  log("init", "runtime ready, total " + secs(performance.now()) + "s");
+
+  var t1 = performance.now();
+  log("packages", "loadPackage numpy/pandas/pytz/requests/micropip");
+  await pyodide.loadPackage(["numpy", "pandas", "pytz", "requests", "micropip"]);
+  log("packages", "stack ready, took " + secs(t1) + "s");
+
+  var t2 = performance.now();
+  log("meteostat", "micropip installing vendored wheel (same origin)");
+  var micropip = pyodide.pyimport("micropip");
+  await micropip.install(WHEEL_URL);
+  var ver = pyodide.runPython("import meteostat; meteostat.__version__");
+  log("meteostat", "meteostat " + ver + " installed, took " + secs(t2) + "s");
+
+  var t3 = performance.now();
+  log("query", "stations.nearby + daily(2024) + interpolate, Lake Mendota");
+  var jsonStr = pyodide.runPython(PY_QUERY);
+  log("query", "query finished, took " + secs(t3) + "s");
+
+  var bytes = 0, resCount = 0;
+  try {
+    var entries = performance.getEntriesByType("resource");
+    for (var i = 0; i < entries.length; i++) { resCount++; bytes += entries[i].transferSize || 0; }
+  } catch (err) { /* resource timing unavailable */ }
+  postMessage({ type: "done", totalSec: secs(performance.now()), bytes: bytes, resCount: resCount, payload: jsonStr });
+}
+
+main().catch(function(err) {
+  postMessage({ type: "error", msg: String((err && err.message) || err) });
+});
