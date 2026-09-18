@@ -5,7 +5,9 @@ var INDEX_URL = "https://cdn.jsdelivr.net/pyodide/" + PYODIDE_VERSION + "/full/"
 var WHEEL_URL = "https://gundersona.github.io/lake-weather-dashboard/pyodide-prototype/meteostat-2.1.5-py3-none-any.whl";
 // Same-origin stations database (32.5 MB), vendored for this prototype run.
 // Set to null to use Meteostat's remote stations.db endpoints instead.
-var STATIONS_DB_URL = "stations.db";
+// NOTE: must be an absolute URL — requests rejects relative URLs
+// ("MissingSchema"), which meteostat swallows as a download failure.
+var STATIONS_DB_URL = "https://gundersona.github.io/lake-weather-dashboard/pyodide-prototype/stations.db";
 
 function log(stage, msg) {
   postMessage({ type: "log", stage: stage, msg: msg });
