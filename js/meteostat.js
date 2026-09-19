@@ -397,7 +397,7 @@ async function msFetchWeather(lat, lon, start, end, params, aggregation, signal,
       values[s.key] = rows.map((r) => msR1(r[s.bulk] === null ? null : s.convert(r[s.bulk])));
     }
     msAssertHasData(values);
-    return { time: times, values, resolution: "hourly" };
+    return { time: times, values, resolution: "hourly", stations };
   }
 
   // daily / monthly: daily bulk for everything except wind direction, which
@@ -457,7 +457,7 @@ async function msFetchWeather(lat, lon, start, end, params, aggregation, signal,
     values["wind_direction_10m"] = times.map((t) => msR1(wdirByDay[t]));
   }
   msAssertHasData(values);
-  return { time: times, values, resolution: "daily" };
+  return { time: times, values, resolution: "daily", stations };
 }
 
 /**

@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
-  <link rel="stylesheet" href="css/styles.css?v=8">
+  <link rel="stylesheet" href="css/styles.css?v=9">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
@@ -29,7 +29,7 @@
         <select id="provider">
           <option value="open-meteo">Open-Meteo (historic forecast data)</option>
           <option value="meteostat">Meteostat (station data)</option>
-          <option value="both">Both (compare providers)</option>
+          <option value="both" selected>Both (compare providers)</option>
         </select>
 
         <label for="state">State</label>
@@ -151,9 +151,21 @@
         </div>
       </div>
 
+      <div class="card" id="station-card" hidden>
+        <h2>Meteostat stations</h2>
+        <p class="chart-note">Nearby stations used for inverse-distance interpolation at this lake.</p>
+        <div class="table-wrap">
+          <table id="station-table">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="card">
         <h2>Time series</h2>
         <canvas id="line-chart" aria-label="Line chart of weather variables over time"></canvas>
+        <div id="compare-charts" hidden></div>
       </div>
 
       <div class="card">
@@ -184,6 +196,7 @@
           <button id="prev-page" type="button">‹ Previous</button>
           <span id="page-info"></span>
           <button id="next-page" type="button">Next ›</button>
+          <button id="download-csv" type="button">Download CSV</button>
         </div>
       </div>
     </section>
@@ -241,10 +254,10 @@
   </footer>
 
   <script src="js/config.js" defer></script>
-  <script src="js/meteostat.js?v=1" defer></script>
+  <script src="js/meteostat.js?v=2" defer></script>
   <script src="js/providers.js?v=8" defer></script>
   <script src="js/lakes.js?v=1" defer></script>
-  <script src="js/app.js?v=8" defer></script>
+  <script src="js/app.js?v=9" defer></script>
   <script src="js/analysis.js?v=8" defer></script>
 </body>
 </html>

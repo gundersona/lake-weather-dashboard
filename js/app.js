@@ -21,9 +21,12 @@ const lakeMarkerByObj = new Map();
 /** Currently highlighted (selected) lake marker, if any. */
 let selectedDot = null;
 let lineChart = null;
+let compareCharts = [];
 let tableRows = [];
-let tableVars = [];
+let tableColumns = [];
 let tablePage = 0;
+/** { filename, headers, rows } for the Download CSV button; null when no table built. */
+let csvData = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -107,6 +110,7 @@ function init() {
   $("load-btn").addEventListener("click", onLoad);
   $("prev-page").addEventListener("click", () => changePage(-1));
   $("next-page").addEventListener("click", () => changePage(1));
+  $("download-csv").addEventListener("click", downloadCSV);
   $("provider").addEventListener("change", maybeProviderNotice);
   $("zoom-lake-btn").addEventListener("click", () => {
     const lake = getSelectedLake();
@@ -524,9 +528,12 @@ async function onLoad() {
 
       const buckets = aggregate(fdata, vars, aggregation);
       renderStatCards(fdata, vars);
+      showChartMode("single");
       renderLineChart(buckets, vars, aggregation);
-      buildTable(buckets, vars);
+      buildTable(buckets, vars, { lake, start, end, aggregation });
       renderWindRose(fdata, provider);
+      if (provider === "meteostat") renderStationTable(data.stations, lake);
+      else $("station-card").hidden = true;
 
       $("visuals").hidden = false;
 
@@ -605,9 +612,11 @@ async function loadCompare(opts) {
   const merged = mergeBuckets(omBuckets, msBuckets);
 
   renderCompareSummary(omFiltered, msFiltered, vars);
-  renderCompareChart(merged, vars, aggregation);
-  buildCompareTable(merged, vars);
+  showChartMode("compare");
+  renderCompareCharts(merged, vars, aggregation);
+  buildCompareTable(merged, vars, { lake, start, end, aggregation });
   renderWindRoseCompare(omFiltered, msFiltered, vars);
+  renderStationTable(msRaw && msRaw.stations, lake);
 
   $("visuals").hidden = false;
 
@@ -958,41 +967,33 @@ function renderLineChart(buckets, vars, aggregation) {
 }
 
 /**
- * Compare-mode line chart: both providers overlaid — Open-Meteo solid,
- * Meteostat dashed, same color per variable. Providers with no data for a
- * variable (e.g. Meteostat monthly wind) are skipped; the gap shows as "—"
- * in the summary table.
+ * Compare-mode time series: one line chart per variable (Open-Meteo solid,
+ * Meteostat dashed, same color). Variables with no data from either provider
+ * (e.g. Meteostat monthly wind) are skipped; the gap shows as "—" in the
+ * summary table.
  */
-function renderCompareChart(merged, vars, aggregation) {
-  if (lineChart) { lineChart.destroy(); lineChart = null; }
+function destroyCompareCharts() {
+  for (const c of compareCharts) c.destroy();
+  compareCharts = [];
+}
+
+function renderCompareCharts(merged, vars, aggregation) {
+  destroyCompareCharts();
   if (typeof Chart === "undefined") return;
 
+  const wrap = $("compare-charts");
+  wrap.innerHTML = "";
   const labels = merged.map((b) => b.label);
-  const unitToAxis = new Map();
-  const scales = {};
-  let axisCount = 0;
-
-  const axisLabel = (v) => `${v.label} (${statDescriptor(v)}, ${v.unit})`;
-  for (const v of vars) {
-    if (!unitToAxis.has(v.unit)) {
-      const id = `y${axisCount++}`;
-      unitToAxis.set(v.unit, id);
-      scales[id] = {
-        type: "linear",
-        display: true,
-        position: axisCount === 1 ? "left" : "right",
-        title: { display: true, text: axisLabel(v) },
-        grid: { drawOnChartArea: axisCount === 1 },
-      };
-    }
-  }
+  const modeNoun = aggregation === "hourly" ? "Hourly values"
+    : aggregation === "daily" ? "Daily averages" : "Monthly averages";
 
   const providers = [
     { key: "om", name: "Open-Meteo", dash: [] },
     { key: "ms", name: "Meteostat", dash: [6, 4] },
   ];
-  const datasets = [];
+
   for (const v of vars) {
+    const datasets = [];
     for (const p of providers) {
       const vals = merged.map((b) => {
         const stats = b[p.key] && b[p.key][v.key];
@@ -1000,44 +1001,61 @@ function renderCompareChart(merged, vars, aggregation) {
       });
       if (vals.every((x) => x === null || x === undefined)) continue;
       datasets.push({
-        label: `${axisLabel(v)} — ${p.name}`,
+        label: p.name,
         data: vals,
         borderColor: v.color,
         backgroundColor: v.color,
         borderDash: p.dash,
-        yAxisID: unitToAxis.get(v.unit),
         tension: 0.15,
         pointRadius: 0,
         spanGaps: true,
       });
     }
-  }
+    if (!datasets.length) continue;
 
-  const modeNoun = aggregation === "hourly" ? "Hourly values"
-    : aggregation === "daily" ? "Daily averages" : "Monthly averages";
-  const notes = ["solid: Open-Meteo", "dashed: Meteostat"];
-  if (aggregation !== "hourly" && vars.some((v) => v.key === "precipitation")) {
-    notes.push("precipitation: totals");
-  }
-  const titleText = `${modeNoun} (${notes.join("; ")})`;
+    const fig = document.createElement("figure");
+    fig.className = "var-chart";
+    const cap = document.createElement("figcaption");
+    let capText = `${v.label} (${statDescriptor(v)}, ${v.unit}) — ${modeNoun} (solid: Open-Meteo; dashed: Meteostat)`;
+    if (aggregation !== "hourly" && v.key === "precipitation") capText += "; totals";
+    cap.textContent = capText;
+    const canvas = document.createElement("canvas");
+    fig.appendChild(cap);
+    fig.appendChild(canvas);
+    wrap.appendChild(fig);
 
-  lineChart = new Chart($("line-chart"), {
-    type: "line",
-    data: { labels, datasets },
-    options: {
-      responsive: true,
-      aspectRatio: chartAspectRatio(),
-      interaction: { mode: "index", intersect: false },
-      plugins: {
-        legend: { position: "top" },
-        title: { display: true, text: titleText },
+    compareCharts.push(new Chart(canvas, {
+      type: "line",
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        aspectRatio: chartAspectRatio(),
+        interaction: { mode: "index", intersect: false },
+        plugins: { legend: { position: "top" } },
+        scales: {
+          x: { ticks: { maxTicksLimit: 14, maxRotation: 45 } },
+          y: {
+            title: { display: true, text: `${v.label} (${statDescriptor(v)}, ${v.unit})` },
+          },
+        },
       },
-      scales: {
-        x: { ticks: { maxTicksLimit: 14, maxRotation: 45 } },
-        ...scales,
-      },
-    },
-  });
+    }));
+  }
+}
+
+/** Which chart surface the Time series card shows: single canvas or compare set. */
+function showChartMode(mode) {
+  const single = $("line-chart");
+  const compare = $("compare-charts");
+  if (mode === "compare") {
+    if (lineChart) { lineChart.destroy(); lineChart = null; }
+    single.hidden = true;
+    compare.hidden = false;
+  } else {
+    destroyCompareCharts();
+    compare.hidden = true;
+    single.hidden = false;
+  }
 }
 
 // ---------------------------------------------------------------- data table
@@ -1056,27 +1074,67 @@ function formatCell(varDef, stats) {
   return parts.join(" / ") || "—";
 }
 
-function buildTable(buckets, vars) {
-  tableVars = vars;
-  $("data-table-note").hidden = true;
+function columnHeader(v) {
+  const headerStat = v.key === "precipitation" ? "total"
+    : v.key === "wind_direction_10m" ? "prevailing" : "avg / min / max";
+  return `${v.label} (${v.unit}) — ${headerStat}`;
+}
+
+function buildTable(buckets, vars, meta) {
+  tableColumns = vars.map(columnHeader);
   tableRows = buckets.map((b) => ({
     label: b.label,
     cells: vars.map((v) => formatCell(v, b.stats)),
   }));
   tablePage = 0;
+  setCsvData(meta, ["Period", ...tableColumns], tableRows.map((r) => [r.label, ...r.cells]));
   renderTable();
 }
 
-/** Compare mode: one column per variable, cells read "Open-Meteo / Meteostat". */
-function buildCompareTable(merged, vars) {
-  tableVars = vars;
-  $("data-table-note").hidden = false;
+/** Compare mode: two columns per variable — one for each provider. */
+function buildCompareTable(merged, vars, meta) {
+  tableColumns = vars.flatMap((v) => [
+    `${columnHeader(v)} — Open-Meteo`,
+    `${columnHeader(v)} — Meteostat`,
+  ]);
   tableRows = merged.map((b) => ({
     label: b.label,
-    cells: vars.map((v) => `${formatCell(v, b.om || {})} / ${formatCell(v, b.ms || {})}`),
+    cells: vars.flatMap((v) => [formatCell(v, b.om || {}), formatCell(v, b.ms || {})]),
   }));
   tablePage = 0;
+  setCsvData(meta, ["Period", ...tableColumns], tableRows.map((r) => [r.label, ...r.cells]));
   renderTable();
+}
+
+function setCsvData(meta, headers, rows) {
+  if (!meta) { csvData = null; return; }
+  const slug = meta.lake.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "lake";
+  csvData = {
+    filename: `lake-weather-${slug}-${meta.aggregation}-${meta.start}-to-${meta.end}.csv`,
+    headers,
+    rows,
+  };
+}
+
+/** Download the full results table (all pages) as CSV. Works for any provider. */
+function downloadCSV() {
+  if (!csvData || !csvData.rows.length) {
+    setStatus("No table data to download yet — load weather first.", true);
+    return;
+  }
+  const esc = (v) => {
+    const s = String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = [csvData.headers, ...csvData.rows].map((row) => row.map(esc).join(","));
+  const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = csvData.filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 }
 
 function renderTable() {
@@ -1084,16 +1142,15 @@ function renderTable() {
   const tbody = $("data-table").querySelector("tbody");
   thead.innerHTML = "";
   tbody.innerHTML = "";
+  $("data-table-note").hidden = true;
 
   const hr = document.createElement("tr");
   const th0 = document.createElement("th");
   th0.textContent = "Period";
   hr.appendChild(th0);
-  for (const v of tableVars) {
+  for (const header of tableColumns) {
     const th = document.createElement("th");
-    const headerStat = v.key === "precipitation" ? "total"
-      : v.key === "wind_direction_10m" ? "prevailing" : "avg / min / max";
-    th.textContent = `${v.label} (${v.unit}) — ${headerStat}`;
+    th.textContent = header;
     hr.appendChild(th);
   }
   thead.appendChild(hr);
@@ -1118,7 +1175,7 @@ function renderTable() {
   if (slice.length === 0) {
     const tr = document.createElement("tr");
     const td = document.createElement("td");
-    td.colSpan = tableVars.length + 1;
+    td.colSpan = tableColumns.length + 1;
     td.className = "empty-note";
     td.textContent = "No data.";
     tr.appendChild(td);
@@ -1134,6 +1191,56 @@ function renderTable() {
 function changePage(delta) {
   tablePage += delta;
   renderTable();
+}
+
+// ---------------------------------------------------------------- Meteostat station summary
+
+/** Bearing in degrees (0–360) from (lat1, lon1) to (lat2, lon2). */
+function bearingTo(lat1, lon1, lat2, lon2) {
+  const p1 = (lat1 * Math.PI) / 180;
+  const p2 = (lat2 * Math.PI) / 180;
+  const d = ((lon2 - lon1) * Math.PI) / 180;
+  const y = Math.sin(d) * Math.cos(p2);
+  const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(d);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+/**
+ * Summary table of the Meteostat stations used for interpolation: station id,
+ * distance from the lake, and compass direction from the lake (e.g. "8 mi NE").
+ */
+function renderStationTable(stations, lake) {
+  const card = $("station-card");
+  if (!stations || !stations.length) {
+    card.hidden = true;
+    return;
+  }
+  const thead = $("station-table").querySelector("thead");
+  const tbody = $("station-table").querySelector("tbody");
+  thead.innerHTML = "";
+  tbody.innerHTML = "";
+
+  const hr = document.createElement("tr");
+  for (const h of ["Station", "Distance", "Direction"]) {
+    const th = document.createElement("th");
+    th.textContent = h;
+    hr.appendChild(th);
+  }
+  thead.appendChild(hr);
+
+  const rows = [...stations].sort((a, b) => a.dist - b.dist);
+  for (const s of rows) {
+    const tr = document.createElement("tr");
+    const tdId = document.createElement("td");
+    tdId.textContent = s.id;
+    const tdDist = document.createElement("td");
+    tdDist.textContent = `${Math.round(s.dist / 1609.344)} mi`;
+    const tdDir = document.createElement("td");
+    tdDir.textContent = compass16(bearingTo(lake.lat, lake.lon, s.lat, s.lon));
+    tr.append(tdId, tdDist, tdDir);
+    tbody.appendChild(tr);
+  }
+  card.hidden = false;
 }
 
 // ---------------------------------------------------------------- wind rose
