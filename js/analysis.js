@@ -1,9 +1,12 @@
 // Lake analysis: rank lakes by mean wind speed over a date range.
 //
-// Fetches Open-Meteo daily wind means for every lake in the scope using the
-// archive API's multi-location support (100 lakes per request, 4 concurrent
-// requests), averages each lake's daily means over the period, and ranks the
-// lakes. Built for long, monthly-style periods — not hourly data.
+// The weather source follows the provider selector in Controls:
+//  - Open-Meteo: daily wind means for every lake via the archive API's
+//    multi-location support (100 lakes per request, 4 concurrent requests).
+//  - Meteostat: daily wind interpolated from the nearest stations for each
+//    lake (station-year files are cached, so lakes near the same stations
+//    are cheap after the first fetch).
+// Built for long, monthly-style periods — not hourly data.
 // Uses the shared date range, month filter, and temperature/area filters from
 // Controls: only days whose month is selected and whose daily mean temperature
 // is in range contribute to each lake's average.
@@ -107,6 +110,23 @@ async function fetchBatchDaily(batch, start, end, signal, wantTemp) {
   throw lastErr;
 }
 
+/** Mean wind (mph) over days passing the shared month/temperature filters; null when unusable. */
+function analysisLakeMean(lake, s, months, tempRange, tempActive) {
+  const windVals = [];
+  for (let i = 0; i < s.wind.length; i++) {
+    const day = (s.time[i] || "").slice(0, 10);
+    if (!months.includes(parseInt(day.slice(5, 7), 10))) continue;
+    if (tempActive) {
+      const t = s.temp ? s.temp[i] : null;
+      if (t === null || t === undefined) continue;
+      if (tempRange.min !== null && t < tempRange.min) continue;
+      if (tempRange.max !== null && t > tempRange.max) continue;
+    }
+    windVals.push(s.wind[i]);
+  }
+  return analysisMean(windVals);
+}
+
 async function runAnalysis() {
   if (analysisRunning) return;
   refreshAnalysisScopeLabel();
@@ -135,7 +155,8 @@ async function runAnalysis() {
     return;
   }
   if (start < ANALYSIS_MIN_DATE) start = ANALYSIS_MIN_DATE;
-  const maxEnd = maxEndDate();
+  const provider = $("provider").value;
+  const maxEnd = maxEndDate(provider, "daily");
   if (end > maxEnd) end = maxEnd;
   if (start > end) {
     setAnalysisStatus("From date must be on or before the To date.", true);
@@ -183,39 +204,30 @@ async function runAnalysis() {
 
     const dir = $("analysis-dir").value;
     const topN = parseInt($("analysis-top").value, 10) || 25;
+    const isMeteostat = provider === "meteostat";
     const batches = [];
     for (let i = 0; i < lakes.length; i += ANALYSIS_BATCH) {
       batches.push(lakes.slice(i, i + ANALYSIS_BATCH));
     }
     const results = [];
     let failed = 0, processed = 0, next = 0;
-    setAnalysisStatus(`Fetching wind data for ${lakes.length.toLocaleString()} lakes in batches of ${ANALYSIS_BATCH}…`);
-    async function worker() {
+    setAnalysisStatus(
+      isMeteostat
+        ? `Fetching Meteostat wind data for ${lakes.length.toLocaleString()} lakes (interpolated from nearby stations)…`
+        : `Fetching wind data for ${lakes.length.toLocaleString()} lakes in batches of ${ANALYSIS_BATCH}…`);
+    function tally(lake, s) {
+      if (!s) { failed++; return; }
+      const m = analysisLakeMean(lake, s, months, tempRange, tempActive);
+      if (m === null || m === undefined) failed++;
+      else results.push({ lake, mean: m });
+    }
+    async function omWorker() {
       while (next < batches.length) {
         if (signal.aborted) return;
         const batch = batches[next++];
         try {
           const series = await fetchBatchDaily(batch, start, end, signal, tempActive);
-          for (let k = 0; k < batch.length; k++) {
-            const s = series[k];
-            // Keep only days whose month is selected and whose daily mean
-            // temperature is in range; average wind over those days.
-            const windVals = [];
-            for (let i = 0; i < s.wind.length; i++) {
-              const day = (s.time[i] || "").slice(0, 10);
-              if (!months.includes(parseInt(day.slice(5, 7), 10))) continue;
-              if (tempActive) {
-                const t = s.temp ? s.temp[i] : null;
-                if (t === null || t === undefined) continue;
-                if (tempRange.min !== null && t < tempRange.min) continue;
-                if (tempRange.max !== null && t > tempRange.max) continue;
-              }
-              windVals.push(s.wind[i]);
-            }
-            const m = analysisMean(windVals);
-            if (m === null || m === undefined) failed++;
-            else results.push({ lake: batch[k], mean: m });
-          }
+          for (let k = 0; k < batch.length; k++) tally(batch[k], series[k]);
         } catch (err) {
           if (signal.aborted) return;
           failed += batch.length;
@@ -226,7 +238,24 @@ async function runAnalysis() {
           `${processed.toLocaleString()} / ${lakes.length.toLocaleString()} lakes`);
       }
     }
-    await Promise.all(Array.from({ length: ANALYSIS_CONCURRENCY }, worker));
+    async function msWorker() {
+      while (next < lakes.length) {
+        if (signal.aborted) return;
+        const lake = lakes[next++];
+        try {
+          tally(lake, await msFetchLakeDaily(lake.lat, lake.lon, start, end, signal));
+        } catch (err) {
+          if (signal.aborted) return;
+          failed++;
+        }
+        processed++;
+        setAnalysisProgress(
+          0.05 + 0.95 * (processed / lakes.length),
+          `${processed.toLocaleString()} / ${lakes.length.toLocaleString()} lakes`);
+      }
+    }
+    await Promise.all(Array.from({ length: ANALYSIS_CONCURRENCY },
+      isMeteostat ? msWorker : omWorker));
     if (signal.aborted) return;
 
     results.sort((a, b) => (dir === "asc" ? a.mean - b.mean : b.mean - a.mean));
@@ -239,6 +268,7 @@ async function runAnalysis() {
     if (failed) notes.push(`${failed.toLocaleString()} had no usable data`);
     setAnalysisStatus(
       `Ranked ${results.length.toLocaleString()} lakes by average wind, ${start} to ${end}` +
+      ` (${provider === "meteostat" ? "Meteostat station interpolation" : "Open-Meteo archive"})` +
       (notes.length ? " — " + notes.join("; ") + "." : "."));
   } catch (err) {
     if (!signal.aborted) {

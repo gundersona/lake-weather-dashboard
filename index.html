@@ -28,7 +28,7 @@
         <label for="provider">Weather provider</label>
         <select id="provider">
           <option value="open-meteo">Open-Meteo (free, no key)</option>
-          <option value="meteostat">Meteostat (needs server API key)</option>
+          <option value="meteostat">Meteostat (free, no key — station data)</option>
         </select>
 
         <label for="state">State</label>
@@ -208,13 +208,14 @@
   </main>
 
   <footer>
-    <p>Data: <a href="https://open-meteo.com/">Open-Meteo</a> (ERA5 reanalysis, interpolated to lake coordinates). Lake locations: USGS GNIS. Lake areas: USGS NHD.</p>
+    <p>Data: <a href="https://open-meteo.com/">Open-Meteo</a> (ERA5 reanalysis, interpolated to lake coordinates) or <a href="https://meteostat.net/">Meteostat</a> (weather-station observations, interpolated to lake coordinates). Lake locations: USGS GNIS. Lake areas: USGS NHD.</p>
   </footer>
 
   <script src="js/config.js" defer></script>
-  <script src="js/providers.js" defer></script>
+  <script src="js/meteostat.js" defer></script>
+  <script src="js/providers.js?v=6" defer></script>
   <script src="js/lakes.js?v=1" defer></script>
-  <script src="js/app.js?v=5" defer></script>
-  <script src="js/analysis.js?v=4" defer></script>
+  <script src="js/app.js?v=6" defer></script>
+  <script src="js/analysis.js?v=5" defer></script>
 </body>
 </html>

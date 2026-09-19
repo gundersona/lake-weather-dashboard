@@ -20,10 +20,15 @@ function toISODate(d) {
   return d.toISOString().slice(0, 10);
 }
 
-/** Earliest end date Open-Meteo's archive API supports (~5 days ago). */
-function maxEndDate() {
+/** Earliest end date the archive can serve — provider and aggregation aware. */
+function maxEndDate(provider, aggregation) {
   const d = new Date();
-  d.setDate(d.getDate() - 5);
+  if (provider === "meteostat") {
+    // Meteostat hourly is near real-time; daily bulk lags ~2 days.
+    d.setDate(d.getDate() - (aggregation === "hourly" ? 0 : 2));
+  } else {
+    d.setDate(d.getDate() - 5); // Open-Meteo's archive lags ~5 days
+  }
   return toISODate(d);
 }
 
@@ -158,10 +163,34 @@ async function fetchOpenMeteo(lat, lon, start, end, params, aggregation = "hourl
   return fetchDaily(lat, lon, start, end, params);
 }
 
-async function fetchMeteostat() {
-  throw new Error(
-    "Meteostat needs a server-side API key and isn't available in this static build — please use Open-Meteo."
-  );
+async function fetchMeteostat(lat, lon, start, end, params, aggregation = "hourly") {
+  if (!["hourly", "daily", "monthly"].includes(aggregation)) {
+    throw new Error(`Unknown aggregation: ${aggregation}.`);
+  }
+  if (start < MIN_START) {
+    throw new Error(`From date must be on or after ${MIN_START} (Meteostat data begins in 1940).`);
+  }
+  const maxEnd = maxEndDate("meteostat", aggregation);
+  if (end > maxEnd) {
+    throw new Error(`To date must be no later than ${maxEnd} (Meteostat data lags ~${aggregation === "hourly" ? "1 day" : "2 days"}).`);
+  }
+  if (start > end) {
+    throw new Error("From date must be before the To date.");
+  }
+  // Monthly wind would need the hourly bulk for all years (wind direction
+  // isn't in the daily files) — cost-prohibitive, so it's skipped and the
+  // UI says so. Everything else comes from the daily bulk files.
+  let effParams = params;
+  if (aggregation === "monthly") {
+    effParams = params.filter((p) => p !== "wind_speed_10m" && p !== "wind_direction_10m");
+  }
+  // Monthly is served as daily series (resolution "daily") and bucketed by
+  // the app, exactly like the Open-Meteo path — so the shared month/temp
+  // filters and the min/max series handling work identically.
+  const data = await msFetchWeather(lat, lon, start, end, effParams, aggregation === "monthly" ? "daily" : aggregation);
+  // In hourly mode wind_speed_10m_max isn't set (no true maxima).
+  if (aggregation === "hourly") delete data.values["wind_speed_10m_max"];
+  return data;
 }
 
 /**

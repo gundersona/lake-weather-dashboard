@@ -271,7 +271,11 @@ function onLakeSelected(lake, opts) {
 
 function maybeProviderNotice() {
   if ($("provider").value === "meteostat") {
-    setStatus("Meteostat needs a server-side API key and isn't available in this static build — please use Open-Meteo.", false);
+    setStatus(
+      "Meteostat interpolates the nearest weather stations (within 50 km). " +
+      "First use loads a 450 KB station directory. Monthly mode skips wind " +
+      "speed and direction (not reported monthly).",
+      false);
   } else {
     setStatus("");
   }
@@ -413,15 +417,23 @@ async function onLoad() {
   const provider = $("provider").value;
   const aggregation = $("aggregation").value;
 
-  // Humidity and pressure have no Open-Meteo daily equivalent; they only work hourly.
+  // Variables the chosen provider can't serve at this aggregation are
+  // skipped with a note: Open-Meteo has no daily humidity/pressure;
+  // Meteostat has no monthly wind (it's not reported monthly).
   let skipped = [];
-  if (aggregation !== "hourly") {
+  if (provider === "open-meteo" && aggregation !== "hourly") {
     skipped = vars.filter((v) => HOURLY_ONLY_KEYS.includes(v.key));
     vars = vars.filter((v) => !HOURLY_ONLY_KEYS.includes(v.key));
+  } else if (provider === "meteostat" && aggregation === "monthly") {
+    skipped = vars.filter((v) => v.key === "wind_speed_10m" || v.key === "wind_direction_10m");
+    vars = vars.filter((v) => v.key !== "wind_speed_10m" && v.key !== "wind_direction_10m");
   }
   if (vars.length === 0) {
+    const why = provider === "open-meteo"
+      ? "humidity and pressure need hourly mode"
+      : "Meteostat doesn't report wind by month";
     setStatus("None of the selected variables are available for " + aggregation +
-      " aggregation — humidity and pressure need hourly.", true);
+      " aggregation — " + why + ".", true);
     return;
   }
   const params = vars.map((v) => v.param);
@@ -464,14 +476,15 @@ async function onLoad() {
     renderStatCards(fdata, vars);
     renderLineChart(buckets, vars, aggregation);
     buildTable(buckets, vars);
-    renderWindRose(fdata);
+    renderWindRose(fdata, provider);
 
     $("visuals").hidden = false;
 
     let msg = `Loaded ${buckets.length} ${aggregation} period${buckets.length === 1 ? "" : "s"} for ${lake.name} (${start} to ${end}).` +
       describeActiveFilters();
     if (skipped.length) {
-      msg += ` Skipped ${skipped.map((v) => v.label).join(", ")} (hourly aggregation only).`;
+      const reason = provider === "meteostat" ? "(not reported by month)" : "(hourly aggregation only)";
+      msg += ` Skipped ${skipped.map((v) => v.label).join(", ")} ${reason}.`;
     }
     setStatus(msg);
   } catch (err) {
@@ -747,7 +760,7 @@ function changePage(delta) {
 
 // ---------------------------------------------------------------- wind rose
 
-function renderWindRose(data) {
+function renderWindRose(data, provider) {
   const windSpeedUnit = () =>
     (VARIABLES.find((v) => v.key === "wind_speed_10m") || {}).unit || "mph";
   const canvas = $("wind-rose");
@@ -859,6 +872,9 @@ function renderWindRose(data) {
       (data.resolution === "hourly"
         ? " Built from every hourly observation in the range."
         : " Built from one value per day (dominant direction and daily mean speed), " +
-          "so expect a coarser picture than hourly mode.");
+          "so expect a coarser picture than hourly mode.") +
+      (provider === "meteostat"
+        ? " Meteostat interpolates nearby stations (within 50 km)."
+        : "");
   }
 }
