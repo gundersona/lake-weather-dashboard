@@ -189,7 +189,8 @@ async function fetchMeteostat(lat, lon, start, end, params, aggregation = "hourl
   // Monthly is served as daily series (resolution "daily") and bucketed by
   // the app, exactly like the Open-Meteo path — so the shared month/temp
   // filters and the min/max series handling work identically.
-  const data = await msFetchWeather(lat, lon, start, end, effParams, aggregation === "monthly" ? "daily" : aggregation);
+  const data = await msFetchWeather(lat, lon, start, end, effParams, aggregation === "monthly" ? "daily" : aggregation,
+    undefined, options.onProgress);
   // In hourly mode wind_speed_10m_max isn't set (no true maxima).
   if (aggregation === "hourly") delete data.values["wind_speed_10m_max"];
   return data;

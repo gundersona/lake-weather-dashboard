@@ -502,12 +502,21 @@ async function onLoad() {
   const providerName = isCompare ? "both providers"
     : provider === "open-meteo" ? "Open-Meteo" : "Meteostat";
   setStatus(`Fetching ${providerName} data for ${lake.name}…`);
+  const loadProviders = isCompare
+    ? ["open-meteo", "meteostat"].filter((p) => (p === "open-meteo" ? omParams.length : msParams.length))
+    : [provider];
+  showLoadProgress(loadProviders);
 
   try {
     if (isCompare) {
       await loadCompare({ lake, start, end, vars, months, tempRange, tempActive, aggregation, omParams, msParams });
     } else {
-      const data = await fetchWeather(provider, lake.lat, lake.lon, start, end, fetchParams, aggregation);
+      setProviderProgress(provider, null, null, "Fetching…");
+      const data = await fetchWeather(provider, lake.lat, lake.lon, start, end, fetchParams, aggregation,
+        provider === "meteostat"
+          ? { onProgress: (done, total) => setProviderProgress("meteostat", done, total, `Station data ${done}/${total}`) }
+          : undefined);
+      setProviderDone(provider);
       if (!data.time.length) throw new Error("No data returned for this date range.");
 
       const fdata = applySharedFilters(data, months, tempRange, tempActive);
@@ -530,9 +539,11 @@ async function onLoad() {
       setStatus(msg);
     }
   } catch (err) {
+    if (!isCompare) setProviderError(provider, err.message || "load failed");
     setStatus(err.message || "Something went wrong while loading weather data.", true);
     console.error(err);
   } finally {
+    hideLoadProgress();
     btn.disabled = false;
     btn.textContent = "Load weather";
   }
@@ -557,13 +568,19 @@ async function loadCompare(opts) {
     let omR = null, msR = null, omE = null, msE = null;
     const jobs = [];
     if (omParams.length) {
+      setProviderProgress("open-meteo", null, null, "Fetching…");
       jobs.push(fetchWeather("open-meteo", lake.lat, lake.lon, start, omEnd, omParams, aggregation,
         aggregation === "hourly" ? { timezone: "UTC" } : {})
-        .then((d) => { omR = d; }).catch((e) => { omE = e; }));
+        .then((d) => { omR = d; setProviderDone("open-meteo"); })
+        .catch((e) => { omE = e; setProviderError("open-meteo", e.message); }));
     }
     if (msParams.length) {
-      jobs.push(fetchWeather("meteostat", lake.lat, lake.lon, start, msEnd, msParams, aggregation)
-        .then((d) => { msR = d; }).catch((e) => { msE = e; }));
+      setProviderProgress("meteostat", null, null, "Starting…");
+      jobs.push(fetchWeather("meteostat", lake.lat, lake.lon, start, msEnd, msParams, aggregation, {
+        onProgress: (done, total) => setProviderProgress("meteostat", done, total, `Station data ${done}/${total}`),
+      })
+        .then((d) => { msR = d; setProviderDone("meteostat"); })
+        .catch((e) => { msE = e; setProviderError("meteostat", e.message); }));
     }
     await Promise.all(jobs);
     return [omR, msR, omE, msE];
@@ -633,6 +650,48 @@ function mergeBuckets(omBuckets, msBuckets) {
   }
   return [...map.values()].sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
 }
+
+/** Show one progress row per provider being fetched. */
+function showLoadProgress(providers) {
+  const wrap = $("load-progress");
+  for (const row of wrap.querySelectorAll(".provider-progress")) {
+    const active = providers.includes(row.dataset.provider);
+    row.hidden = !active;
+    if (active) setProviderProgress(row.dataset.provider, null, null, "Starting…");
+  }
+  wrap.hidden = false;
+}
+
+/**
+ * Update a provider's progress row. done/total = null renders an
+ * indeterminate bar (Open-Meteo is a single request — nothing to count).
+ */
+function setProviderProgress(provider, done, total, stateText) {
+  const row = document.querySelector(`.provider-progress[data-provider="${provider}"]`);
+  if (!row || row.hidden) return;
+  const bar = row.querySelector("progress");
+  if (done === null || total === null || total === 0) bar.removeAttribute("value");
+  else bar.value = Math.round((done / total) * 100);
+  row.querySelector(".pp-state").textContent = stateText;
+  row.classList.remove("error");
+}
+
+function setProviderDone(provider) {
+  const row = document.querySelector(`.provider-progress[data-provider="${provider}"]`);
+  if (!row || row.hidden) return;
+  row.querySelector("progress").value = 100;
+  row.querySelector(".pp-state").textContent = "Done";
+  row.classList.remove("error");
+}
+
+function setProviderError(provider, msg) {
+  const row = document.querySelector(`.provider-progress[data-provider="${provider}"]`);
+  if (!row || row.hidden) return;
+  row.querySelector(".pp-state").textContent = `Failed: ${msg}`;
+  row.classList.add("error");
+}
+
+function hideLoadProgress() { $("load-progress").hidden = true; }
 
 function setStatus(msg, isError) {
   const el = $("status");

@@ -250,11 +250,14 @@ async function msFetchStationYear(product, stationId, year, signal) {
 }
 
 /** Fetch every station-year in the cartesian product; stationId -> merged Map|null. */
-async function msLoadMany(product, stations, years, signal) {
+async function msLoadMany(product, stations, years, signal, onFileDone) {
   const data = new Map();
   await Promise.all(stations.map(async (st) => {
     const perYear = await Promise.all(
-      years.map((y) => msFetchStationYear(product, st.id, y, signal))
+      years.map((y) => msFetchStationYear(product, st.id, y, signal).then((m) => {
+        if (onFileDone) onFileDone();
+        return m;
+      }))
     );
     const merged = new Map();
     for (const m of perYear) {
@@ -367,18 +370,27 @@ function msAssertHasData(values) {
  * params are dashboard variable keys; aggregation is hourly|daily|monthly
  * (monthly is served from the daily bulk files, bucketed client-side).
  */
-async function msFetchWeather(lat, lon, start, end, params, aggregation, signal) {
+async function msFetchWeather(lat, lon, start, end, params, aggregation, signal, onProgress) {
   const stations = await msNearby(lat, lon);
   if (!stations.length) {
     throw new Error("No Meteostat stations within 50 km of this location.");
   }
   const years = msYears(start, end);
   const getRows = (data) => (id) => data.get(id);
+  // Progress across the bulk files this fetch will download (≤4 stations ×
+  // years × products). onProgress(done, total) lets the UI show a real bar.
+  let doneFiles = 0;
+  let totalFiles = 0;
+  const tick = () => {
+    doneFiles++;
+    if (onProgress) onProgress(doneFiles, totalFiles);
+  };
 
   if (aggregation === "hourly") {
     const times = msHourlyTimes(start, end);
     const specs = MS_HOURLY_SPECS.filter((s) => params.includes(s.key));
-    const data = await msLoadMany("hourly", stations, years, signal);
+    totalFiles = stations.length * years.length;
+    const data = await msLoadMany("hourly", stations, years, signal, tick);
     const rows = msInterpolate(times, stations, getRows(data), specs);
     const values = {};
     for (const s of specs) {
@@ -394,7 +406,9 @@ async function msFetchWeather(lat, lon, start, end, params, aggregation, signal)
   const specs = MS_DAILY_SPECS.filter(
     (s) => params.includes(s.key) || (s.dailyExtra && params.includes("temperature_2m"))
   );
-  const data = await msLoadMany("daily", stations, years, signal);
+  const needHourlyBulk = params.includes("wind_direction_10m") || params.includes("wind_speed_10m");
+  totalFiles = stations.length * years.length * (needHourlyBulk ? 2 : 1);
+  const data = await msLoadMany("daily", stations, years, signal, tick);
   const rows = msInterpolate(times, stations, getRows(data), specs);
 
   let wdirByDay = null;
@@ -403,7 +417,7 @@ async function msFetchWeather(lat, lon, start, end, params, aggregation, signal)
   // wants the true maxima — both need the hourly bulk.
   if (params.includes("wind_direction_10m") || params.includes("wind_speed_10m")) {
     const hTimes = msHourlyTimes(start, end);
-    const hData = await msLoadMany("hourly", stations, years, signal);
+    const hData = await msLoadMany("hourly", stations, years, signal, tick);
     const hRows = msInterpolate(hTimes, stations, getRows(hData), [
       { bulk: "wdir", categorical: true },
       { bulk: "wspd" },

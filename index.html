@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
-  <link rel="stylesheet" href="css/styles.css?v=7">
+  <link rel="stylesheet" href="css/styles.css?v=8">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
@@ -123,6 +123,18 @@
         </fieldset>
 
         <button id="load-btn" type="button">Load weather</button>
+        <div id="load-progress" hidden>
+          <div class="provider-progress" data-provider="open-meteo" hidden>
+            <span class="pp-label">Open-Meteo</span>
+            <progress max="100" value="0"></progress>
+            <span class="pp-state"></span>
+          </div>
+          <div class="provider-progress" data-provider="meteostat" hidden>
+            <span class="pp-label">Meteostat</span>
+            <progress max="100" value="0"></progress>
+            <span class="pp-state"></span>
+          </div>
+        </div>
         <p id="status" role="status" aria-live="polite"></p>
       </div>
     </aside>
@@ -229,10 +241,10 @@
   </footer>
 
   <script src="js/config.js" defer></script>
-  <script src="js/meteostat.js" defer></script>
-  <script src="js/providers.js?v=7" defer></script>
+  <script src="js/meteostat.js?v=1" defer></script>
+  <script src="js/providers.js?v=8" defer></script>
   <script src="js/lakes.js?v=1" defer></script>
-  <script src="js/app.js?v=7" defer></script>
+  <script src="js/app.js?v=8" defer></script>
   <script src="js/analysis.js?v=8" defer></script>
 </body>
 </html>
