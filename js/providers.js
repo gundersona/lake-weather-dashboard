@@ -73,7 +73,7 @@ async function fetchJson(url, what) {
   return data[what];
 }
 
-async function fetchHourly(lat, lon, start, end, params) {
+async function fetchHourly(lat, lon, start, end, params, timezone = "auto") {
   const url = buildUrl(OPEN_METEO_ARCHIVE, {
     ...OPEN_METEO_UNITS,
     latitude: lat,
@@ -81,7 +81,7 @@ async function fetchHourly(lat, lon, start, end, params) {
     start_date: start,
     end_date: end,
     hourly: params.join(","),
-    timezone: "auto",
+    timezone,
   });
   const hourly = await fetchJson(url, "hourly");
   const values = {};
@@ -132,7 +132,7 @@ async function fetchDaily(lat, lon, start, end, params) {
   return { time: daily.time, values, resolution: "daily" };
 }
 
-async function fetchOpenMeteo(lat, lon, start, end, params, aggregation = "hourly") {
+async function fetchOpenMeteo(lat, lon, start, end, params, aggregation = "hourly", options = {}) {
   if (!["hourly", "daily", "monthly"].includes(aggregation)) {
     throw new Error(`Unknown aggregation: ${aggregation}.`);
   }
@@ -151,7 +151,9 @@ async function fetchOpenMeteo(lat, lon, start, end, params, aggregation = "hourl
     if (start < yearsAgoISO(1) || daysBetween(start, end) > HOURLY_MAX_SPAN_DAYS) {
       throw new Error("Hourly data is available for the past year only (max 366 days).");
     }
-    return fetchHourly(lat, lon, start, end, params);
+    // Compare mode fetches Open-Meteo in UTC so hourly timestamps line up
+    // with Meteostat's UTC bulk data; single-provider mode keeps local time.
+    return fetchHourly(lat, lon, start, end, params, options.timezone);
   }
   if (aggregation === "daily") {
     if (start < yearsAgoISO(20)) {
@@ -163,7 +165,7 @@ async function fetchOpenMeteo(lat, lon, start, end, params, aggregation = "hourl
   return fetchDaily(lat, lon, start, end, params);
 }
 
-async function fetchMeteostat(lat, lon, start, end, params, aggregation = "hourly") {
+async function fetchMeteostat(lat, lon, start, end, params, aggregation = "hourly", options = {}) {
   if (!["hourly", "daily", "monthly"].includes(aggregation)) {
     throw new Error(`Unknown aggregation: ${aggregation}.`);
   }
@@ -203,8 +205,8 @@ const PROVIDERS = {
 };
 
 /** Unified entry point used by the app. */
-async function fetchWeather(provider, lat, lon, start, end, params, aggregation = "hourly") {
+async function fetchWeather(provider, lat, lon, start, end, params, aggregation = "hourly", options = {}) {
   const p = PROVIDERS[provider];
   if (!p) throw new Error(`Unknown weather provider: ${provider}.`);
-  return p.fetchWeather(lat, lon, start, end, params, aggregation);
+  return p.fetchWeather(lat, lon, start, end, params, aggregation, options);
 }

@@ -224,17 +224,24 @@ legend { font-weight: 600; font-size: 0.85rem; padding: 0 0.4rem; }
 .stat-card .stat-value { font-size: 1.35rem; font-weight: 700; margin: 0.15rem 0; }
 .stat-card .stat-sub { font-size: 0.8rem; color: var(--muted); }
 
-canvas#wind-rose { display: block; margin: 0 auto; width: 100%; height: auto; max-width: 360px; }
+.cmp-main { font-weight: 700; }
+.cmp-sub { font-size: 0.78rem; color: var(--muted); }
+
+.rose-pair { display: flex; gap: 1rem; align-items: flex-start; }
+.rose-pair .rose { flex: 1 1 0; min-width: 0; margin: 0; }
+#wind-rose, #wind-rose-ms { display: block; margin: 0 auto; width: 100%; height: auto; max-width: 360px; }
+.rose-label { text-align: center; font-weight: 700; margin: 0.35rem 0 0; font-size: 0.9rem; }
 
 /* Chart.js sets inline pixel sizes on these; never let them exceed the card. */
 #line-chart { display: block; max-width: 100%; }
 
 .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
-#data-table, #analysis-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+#data-table, #analysis-table, #compare-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 
 #data-table th, #data-table td,
-#analysis-table th, #analysis-table td {
+#analysis-table th, #analysis-table td,
+#compare-table th, #compare-table td {
   padding: 0.4rem 0.55rem;
   border-bottom: 1px solid var(--border);
   text-align: right;
@@ -242,12 +249,13 @@ canvas#wind-rose { display: block; margin: 0 auto; width: 100%; height: auto; ma
 }
 
 #data-table th:first-child, #data-table td:first-child,
-#analysis-table th:first-child, #analysis-table td:first-child { text-align: left; }
+#analysis-table th:first-child, #analysis-table td:first-child,
+#compare-table th:first-child, #compare-table td:first-child { text-align: left; }
 
 /* Lake names read better left-aligned. */
 #analysis-table th:nth-child(2), #analysis-table td:nth-child(2) { text-align: left; }
 
-#data-table thead th, #analysis-table thead th { background: #f2f7fb; font-weight: 700; }
+#data-table thead th, #analysis-table thead th, #compare-table thead th { background: #f2f7fb; font-weight: 700; }
 
 #analysis-table button {
   padding: 0.35rem 0.8rem;
@@ -389,6 +397,9 @@ footer a { color: var(--accent); }
 
   #stat-cards { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
   .stat-card .stat-value { font-size: 1.2rem; }
+
+  /* Wind roses stack vertically on narrow screens. */
+  .rose-pair { flex-direction: column; }
 
   .check { padding: 0.6rem 0; }
 }

@@ -85,26 +85,39 @@ async function fetchBatchDaily(batch, start, end, signal, wantTemp) {
     `?latitude=${lats}&longitude=${lons}&start_date=${start}&end_date=${end}` +
     `&daily=${wantTemp ? "wind_speed_10m_mean,temperature_2m_mean" : "wind_speed_10m_mean"}` +
     "&wind_speed_unit=mph&temperature_unit=fahrenheit&timezone=UTC";
+  // Three attempts; 429s back off longer and honor the server's Retry-After
+  // header when present (Open-Meteo throttles aggressive batch patterns).
+  const backoffs = [1500, 5000, 15000];
   let lastErr = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < backoffs.length; attempt++) {
+    let waitMs = backoffs[attempt];
     try {
       const resp = await fetch(url, { signal });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
-      // Multi-location returns an array; a single location returns one object.
-      const arr = Array.isArray(data) ? data : [data];
-      return arr.map((r) => {
-        const d = (r || {}).daily || {};
-        return {
-          time: d.time || [],
-          wind: d.wind_speed_10m_mean || [],
-          temp: wantTemp ? d.temperature_2m_mean || [] : null,
-        };
-      });
+      if (resp.status === 429) {
+        const retryAfter = parseFloat(resp.headers.get("Retry-After"));
+        if (Number.isFinite(retryAfter) && retryAfter >= 0) waitMs = retryAfter * 1000;
+        lastErr = new Error("HTTP 429");
+      } else if (!resp.ok) {
+        lastErr = new Error(`HTTP ${resp.status}`);
+      } else {
+        const data = await resp.json();
+        // Multi-location returns an array; a single location returns one object.
+        const arr = Array.isArray(data) ? data : [data];
+        return arr.map((r) => {
+          const d = (r || {}).daily || {};
+          return {
+            time: d.time || [],
+            wind: d.wind_speed_10m_mean || [],
+            temp: wantTemp ? d.temperature_2m_mean || [] : null,
+          };
+        });
+      }
     } catch (err) {
       if (signal.aborted) throw err;
       lastErr = err;
-      await new Promise((r) => setTimeout(r, 1500));
+    }
+    if (attempt < backoffs.length - 1 && !signal.aborted) {
+      await new Promise((r) => setTimeout(r, waitMs));
     }
   }
   throw lastErr;
@@ -148,6 +161,7 @@ async function runAnalysis() {
 
   // Shared date range from Controls; clamp to what the archive can serve
   // (kept local — the shared inputs are left untouched for the main section).
+  // In compare mode each provider is clamped to its own freshness limit.
   let start = $("start-date").value;
   let end = $("end-date").value;
   if (!start || !end) {
@@ -156,8 +170,13 @@ async function runAnalysis() {
   }
   if (start < ANALYSIS_MIN_DATE) start = ANALYSIS_MIN_DATE;
   const provider = $("provider").value;
-  const maxEnd = maxEndDate(provider, "daily");
-  if (end > maxEnd) end = maxEnd;
+  const isCompare = provider === "both";
+  const omEnd = end > maxEndDate("open-meteo", "daily") ? maxEndDate("open-meteo", "daily") : end;
+  const msEnd = end > maxEndDate("meteostat", "daily") ? maxEndDate("meteostat", "daily") : end;
+  if (!isCompare) {
+    const maxEnd = maxEndDate(provider, "daily");
+    if (end > maxEnd) end = maxEnd;
+  }
   if (start > end) {
     setAnalysisStatus("From date must be on or before the To date.", true);
     return;
@@ -211,10 +230,10 @@ async function runAnalysis() {
     }
     const results = [];
     let failed = 0, processed = 0, next = 0;
-    setAnalysisStatus(
-      isMeteostat
-        ? `Fetching Meteostat wind data for ${lakes.length.toLocaleString()} lakes (interpolated from nearby stations)…`
-        : `Fetching wind data for ${lakes.length.toLocaleString()} lakes in batches of ${ANALYSIS_BATCH}…`);
+    // Compare mode: phase 1 stores each lake's Open-Meteo mean here for
+    // phase 2 (Meteostat) to join against — only one number per lake, so
+    // even the all-states scope stays light on memory.
+    const omMeans = new Map();
     function tally(lake, s) {
       if (!s) { failed++; return; }
       const m = analysisLakeMean(lake, s, months, tempRange, tempActive);
@@ -254,21 +273,109 @@ async function runAnalysis() {
           `${processed.toLocaleString()} / ${lakes.length.toLocaleString()} lakes`);
       }
     }
-    await Promise.all(Array.from({ length: ANALYSIS_CONCURRENCY },
-      isMeteostat ? msWorker : omWorker));
+    if (!isCompare) {
+      setAnalysisStatus(
+        isMeteostat
+          ? `Fetching Meteostat wind data for ${lakes.length.toLocaleString()} lakes (interpolated from nearby stations)…`
+          : `Fetching wind data for ${lakes.length.toLocaleString()} lakes in batches of ${ANALYSIS_BATCH}…`);
+      await Promise.all(Array.from({ length: ANALYSIS_CONCURRENCY },
+        isMeteostat ? msWorker : omWorker));
+    } else {
+      // Phase 1: Open-Meteo batch means. Batches that fail (usually transient
+      // rate limiting) get one sequential retry pass before their lakes are
+      // counted as failed.
+      setAnalysisStatus(`Fetching Open-Meteo wind data for ${lakes.length.toLocaleString()} lakes…`);
+      const retryBatches = [];
+      async function processOmBatch(batch) {
+        const series = await fetchBatchDaily(batch, start, omEnd, signal, tempActive);
+        for (let k = 0; k < batch.length; k++) {
+          const m = analysisLakeMean(batch[k], series[k], months, tempRange, tempActive);
+          if (m === null || m === undefined) failed++;
+          else omMeans.set(batch[k], m);
+        }
+      }
+      async function omPhaseWorker() {
+        while (next < batches.length) {
+          if (signal.aborted) return;
+          const batch = batches[next++];
+          try {
+            await processOmBatch(batch);
+          } catch (err) {
+            if (signal.aborted) return;
+            retryBatches.push(batch);
+          }
+          processed += batch.length;
+          setAnalysisProgress(
+            0.05 + 0.45 * (processed / lakes.length),
+            `Open-Meteo: ${processed.toLocaleString()} / ${lakes.length.toLocaleString()} lakes`);
+        }
+      }
+      await Promise.all(Array.from({ length: ANALYSIS_CONCURRENCY }, omPhaseWorker));
+      if (signal.aborted) return;
+      // Phase 1b: sequential retry pass for batches that failed above. By now
+      // the workers are done, so this also spaces requests out, which helps
+      // when the failures were rate limiting (HTTP 429).
+      for (const batch of retryBatches) {
+        if (signal.aborted) return;
+        try {
+          await processOmBatch(batch);
+        } catch (err) {
+          if (signal.aborted) return;
+          failed += batch.length;
+        }
+      }
+      if (signal.aborted) return;
+      // Phase 2: Meteostat per-lake means, joined with phase 1. Lakes missing
+      // the Open-Meteo mean were already counted as failed in phase 1.
+      next = 0; processed = 0;
+      setAnalysisStatus(`Fetching Meteostat wind data for ${lakes.length.toLocaleString()} lakes (interpolated from nearby stations)…`);
+      async function msPhaseWorker() {
+        while (next < lakes.length) {
+          if (signal.aborted) return;
+          const lake = lakes[next++];
+          try {
+            const s = await msFetchLakeDaily(lake.lat, lake.lon, start, msEnd, signal);
+            const omMean = omMeans.get(lake);
+            if (omMean !== undefined) {
+              const msMean = s ? analysisLakeMean(lake, s, months, tempRange, tempActive) : null;
+              if (msMean === null || msMean === undefined) failed++;
+              else results.push({ lake, omMean, msMean });
+            }
+          } catch (err) {
+            if (signal.aborted) return;
+            if (omMeans.get(lake) !== undefined) failed++;
+          }
+          processed++;
+          setAnalysisProgress(
+            0.5 + 0.5 * (processed / lakes.length),
+            `Meteostat: ${processed.toLocaleString()} / ${lakes.length.toLocaleString()} lakes`);
+        }
+      }
+      await Promise.all(Array.from({ length: ANALYSIS_CONCURRENCY }, msPhaseWorker));
+    }
     if (signal.aborted) return;
 
-    results.sort((a, b) => (dir === "asc" ? a.mean - b.mean : b.mean - a.mean));
-    renderAnalysisTable(results.slice(0, topN), scope === "all");
+    // Compare mode sorts by the Open-Meteo mean, matching single-provider
+    // ("Avg wind") semantics; the Δ column shows the Meteostat difference.
+    results.sort((a, b) => {
+      const am = isCompare ? a.omMean : a.mean;
+      const bm = isCompare ? b.omMean : b.mean;
+      return dir === "asc" ? am - bm : bm - am;
+    });
+    renderAnalysisTable(results.slice(0, topN), scope === "all", isCompare);
     $("analysis-table-wrap").hidden = false;
     const notes = [];
     if (months.length < 12) notes.push(`months: ${months.map((m) => MONTH_ABBR[m - 1]).join(", ")}`);
     if (tempActive) notes.push(`daily mean temp ${tempRange.min ?? "…"}–${tempRange.max ?? "…"}°F`);
     if (areaExcluded) notes.push(`${areaExcluded.toLocaleString()} excluded by the area filter`);
-    if (failed) notes.push(`${failed.toLocaleString()} had no usable data`);
+    if (failed) notes.push(isCompare
+      ? `${failed.toLocaleString()} had no usable data from one or both providers`
+      : `${failed.toLocaleString()} had no usable data`);
     setAnalysisStatus(
       `Ranked ${results.length.toLocaleString()} lakes by average wind, ${start} to ${end}` +
-      ` (${provider === "meteostat" ? "Meteostat station interpolation" : "Open-Meteo archive"})` +
+      (isCompare
+        ? " (both providers; sorted by Open-Meteo wind, Δ = Meteostat − Open-Meteo)"
+        : ` (${provider === "meteostat" ? "Meteostat station interpolation" : "Open-Meteo archive"})`) +
       (notes.length ? " — " + notes.join("; ") + "." : "."));
   } catch (err) {
     if (!signal.aborted) {
@@ -286,14 +393,17 @@ async function runAnalysis() {
   }
 }
 
-function renderAnalysisTable(rows, showState) {
+function renderAnalysisTable(rows, showState, isCompare = false) {
   const thead = document.querySelector("#analysis-table thead");
   const tbody = document.querySelector("#analysis-table tbody");
   thead.innerHTML = "";
   tbody.innerHTML = "";
   const cols = ["#", "Lake", "County"];
   if (showState) cols.push("State");
-  cols.push("Area (acres)", "Avg wind (mph)", "");
+  cols.push("Area (acres)");
+  if (isCompare) cols.push("OM wind (mph)", "MS wind (mph)", "Δ (mph)");
+  else cols.push("Avg wind (mph)");
+  cols.push("");
   const headRow = document.createElement("tr");
   for (const c of cols) {
     const th = document.createElement("th");
@@ -307,7 +417,13 @@ function renderAnalysisTable(rows, showState) {
     const cells = [String(i + 1), r.lake.name, r.lake.county || "—"];
     if (showState) cells.push(r.lake.state);
     cells.push(formatAcres(r.lake.area_km2));
-    cells.push(r.mean.toFixed(1));
+    if (isCompare) {
+      cells.push(r.omMean.toFixed(1), r.msMean.toFixed(1));
+      const d = r.msMean - r.omMean;
+      cells.push(`${d > 0 ? "+" : d < 0 ? "−" : ""}${Math.abs(d).toFixed(1)}`);
+    } else {
+      cells.push(r.mean.toFixed(1));
+    }
     for (const c of cells) {
       const td = document.createElement("td");
       td.textContent = c;

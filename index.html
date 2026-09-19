@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
-  <link rel="stylesheet" href="css/styles.css?v=6">
+  <link rel="stylesheet" href="css/styles.css?v=7">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
@@ -29,6 +29,7 @@
         <select id="provider">
           <option value="open-meteo">Open-Meteo (historic forecast data)</option>
           <option value="meteostat">Meteostat (station data)</option>
+          <option value="both">Both (compare providers)</option>
         </select>
 
         <label for="state">State</label>
@@ -130,6 +131,12 @@
       <div class="card">
         <h2>Summary</h2>
         <div id="stat-cards"></div>
+        <div id="compare-wrap" hidden>
+          <div class="table-wrap">
+            <table id="compare-table"></table>
+          </div>
+          <p class="chart-note">Δ = Meteostat − Open-Meteo. Gaps shown as —.</p>
+        </div>
       </div>
 
       <div class="card">
@@ -139,12 +146,22 @@
 
       <div class="card">
         <h2>Wind rose</h2>
-        <canvas id="wind-rose" aria-label="Wind rose diagram" width="360" height="360"></canvas>
+        <div class="rose-pair">
+          <figure class="rose">
+            <canvas id="wind-rose" aria-label="Wind rose diagram" width="360" height="360"></canvas>
+            <figcaption class="rose-label" id="rose-label-om" hidden>Open-Meteo</figcaption>
+          </figure>
+          <figure class="rose" id="rose-ms" hidden>
+            <canvas id="wind-rose-ms" aria-label="Wind rose diagram (Meteostat)" width="360" height="360"></canvas>
+            <figcaption class="rose-label">Meteostat</figcaption>
+          </figure>
+        </div>
         <p class="chart-note" id="wind-rose-note">Each wedge points in the compass direction the wind <em>comes from</em>; its length is the average wind speed from that direction over the selected period (longer = stronger). Rings are labeled in mph. The red arrow points at the compass direction the prevailing wind comes from.</p>
       </div>
 
       <div class="card table-card">
         <h2>Data</h2>
+        <p class="chart-note" id="data-table-note" hidden>Values shown as Open-Meteo / Meteostat.</p>
         <div class="table-wrap">
           <table id="data-table">
             <thead></thead>
@@ -213,9 +230,9 @@
 
   <script src="js/config.js" defer></script>
   <script src="js/meteostat.js" defer></script>
-  <script src="js/providers.js?v=6" defer></script>
+  <script src="js/providers.js?v=7" defer></script>
   <script src="js/lakes.js?v=1" defer></script>
-  <script src="js/app.js?v=6" defer></script>
-  <script src="js/analysis.js?v=5" defer></script>
+  <script src="js/app.js?v=7" defer></script>
+  <script src="js/analysis.js?v=8" defer></script>
 </body>
 </html>

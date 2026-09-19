@@ -270,14 +270,29 @@ function onLakeSelected(lake, opts) {
 }
 
 function maybeProviderNotice() {
-  if ($("provider").value === "meteostat") {
+  const provider = $("provider").value;
+  // Keep the aggregation hint accurate: in compare mode Meteostat serves
+  // daily humidity/pressure, so they don't need hourly.
+  const aggNote = document.querySelector('#aggregation + .empty-note');
+  if (provider === "meteostat") {
     setStatus(
       "Meteostat interpolates the nearest weather stations (within 50 km). " +
       "First use loads a 450 KB station directory. Monthly mode skips wind " +
       "speed and direction (not reported monthly).",
       false);
+  } else if (provider === "both") {
+    setStatus(
+      "Compare mode loads both providers. Gaps are shown as —: monthly wind " +
+      "is Open-Meteo only, daily humidity and pressure are Meteostat only, " +
+      "and each provider covers dates up to its own freshness limit.",
+      false);
   } else {
     setStatus("");
+  }
+  if (aggNote) {
+    aggNote.textContent = provider === "both"
+      ? "Humidity & pressure: hourly for Open-Meteo, daily OK via Meteostat. Monthly goes back to 1940."
+      : "Humidity & pressure need hourly. Monthly goes back to 1940.";
   }
 }
 
@@ -382,6 +397,29 @@ function filterDataToDays(data, keepDays) {
   return { time: idx.map((i) => data.time[i]), values, resolution: data.resolution };
 }
 
+/**
+ * Apply the shared month + temperature filters to one provider's dataset:
+ * keep whole days whose month is selected and whose daily mean temperature is
+ * in range (hourly mode derives the daily mean from the 24 hourly values).
+ * Returns the filtered dataset, or null when no days match.
+ */
+function applySharedFilters(data, months, tempRange, tempActive) {
+  const dayInfo = computeDayInfo(data, tempActive);
+  const keepDays = new Set();
+  for (const [dk, info] of dayInfo) {
+    if (!months.includes(info.month)) continue;
+    if (tempActive) {
+      const t = info.meanTemp;
+      if (t === null || t === undefined) continue;
+      if (tempRange.min !== null && t < tempRange.min) continue;
+      if (tempRange.max !== null && t > tempRange.max) continue;
+    }
+    keepDays.add(dk);
+  }
+  if (!keepDays.size) return null;
+  return filterDataToDays(data, keepDays);
+}
+
 // ---------------------------------------------------------------- load
 
 function selectedVariables() {
@@ -416,25 +454,29 @@ async function onLoad() {
 
   const provider = $("provider").value;
   const aggregation = $("aggregation").value;
+  const isCompare = provider === "both";
 
-  // Variables the chosen provider can't serve at this aggregation are
-  // skipped with a note: Open-Meteo has no daily humidity/pressure;
-  // Meteostat has no monthly wind (it's not reported monthly).
+  // Variables a single provider can't serve at this aggregation are skipped
+  // with a note: Open-Meteo has no daily humidity/pressure; Meteostat has no
+  // monthly wind (it's not reported monthly). In compare mode nothing is
+  // dropped — each provider fetches what it can and gaps render as "—".
   let skipped = [];
-  if (provider === "open-meteo" && aggregation !== "hourly") {
-    skipped = vars.filter((v) => HOURLY_ONLY_KEYS.includes(v.key));
-    vars = vars.filter((v) => !HOURLY_ONLY_KEYS.includes(v.key));
-  } else if (provider === "meteostat" && aggregation === "monthly") {
-    skipped = vars.filter((v) => v.key === "wind_speed_10m" || v.key === "wind_direction_10m");
-    vars = vars.filter((v) => v.key !== "wind_speed_10m" && v.key !== "wind_direction_10m");
-  }
-  if (vars.length === 0) {
-    const why = provider === "open-meteo"
-      ? "humidity and pressure need hourly mode"
-      : "Meteostat doesn't report wind by month";
-    setStatus("None of the selected variables are available for " + aggregation +
-      " aggregation — " + why + ".", true);
-    return;
+  if (!isCompare) {
+    if (provider === "open-meteo" && aggregation !== "hourly") {
+      skipped = vars.filter((v) => HOURLY_ONLY_KEYS.includes(v.key));
+      vars = vars.filter((v) => !HOURLY_ONLY_KEYS.includes(v.key));
+    } else if (provider === "meteostat" && aggregation === "monthly") {
+      skipped = vars.filter((v) => v.key === "wind_speed_10m" || v.key === "wind_direction_10m");
+      vars = vars.filter((v) => v.key !== "wind_speed_10m" && v.key !== "wind_direction_10m");
+    }
+    if (vars.length === 0) {
+      const why = provider === "open-meteo"
+        ? "humidity and pressure need hourly mode"
+        : "Meteostat doesn't report wind by month";
+      setStatus("None of the selected variables are available for " + aggregation +
+        " aggregation — " + why + ".", true);
+      return;
+    }
   }
   const params = vars.map((v) => v.param);
 
@@ -445,48 +487,48 @@ async function onLoad() {
   const fetchParams = [...params];
   if (tempActive && !fetchParams.includes("temperature_2m")) fetchParams.push("temperature_2m");
 
+  // Compare mode: per-provider fetch params, dropping what each provider
+  // can't serve so its request doesn't throw.
+  const omParams = isCompare && aggregation !== "hourly"
+    ? fetchParams.filter((p) => !HOURLY_ONLY_KEYS.includes(p))
+    : fetchParams;
+  const msParams = isCompare && aggregation === "monthly"
+    ? fetchParams.filter((p) => p !== "wind_speed_10m" && p !== "wind_direction_10m")
+    : fetchParams;
+
   const btn = $("load-btn");
   btn.disabled = true;
   btn.textContent = "Loading…";
-  setStatus(`Fetching ${provider === "open-meteo" ? "Open-Meteo" : "Meteostat"} data for ${lake.name}…`);
+  const providerName = isCompare ? "both providers"
+    : provider === "open-meteo" ? "Open-Meteo" : "Meteostat";
+  setStatus(`Fetching ${providerName} data for ${lake.name}…`);
 
   try {
-    const data = await fetchWeather(provider, lake.lat, lake.lon, start, end, fetchParams, aggregation);
-    if (!data.time.length) throw new Error("No data returned for this date range.");
+    if (isCompare) {
+      await loadCompare({ lake, start, end, vars, months, tempRange, tempActive, aggregation, omParams, msParams });
+    } else {
+      const data = await fetchWeather(provider, lake.lat, lake.lon, start, end, fetchParams, aggregation);
+      if (!data.time.length) throw new Error("No data returned for this date range.");
 
-    // Shared month + temperature filters: keep whole days whose month is
-    // selected and whose daily mean temperature is in range (hourly mode
-    // derives the daily mean from the 24 hourly values).
-    const dayInfo = computeDayInfo(data, tempActive);
-    const keepDays = new Set();
-    for (const [dk, info] of dayInfo) {
-      if (!months.includes(info.month)) continue;
-      if (tempActive) {
-        const t = info.meanTemp;
-        if (t === null || t === undefined) continue;
-        if (tempRange.min !== null && t < tempRange.min) continue;
-        if (tempRange.max !== null && t > tempRange.max) continue;
+      const fdata = applySharedFilters(data, months, tempRange, tempActive);
+      if (!fdata) throw new Error("No days in the selected range match the month/temperature filters.");
+
+      const buckets = aggregate(fdata, vars, aggregation);
+      renderStatCards(fdata, vars);
+      renderLineChart(buckets, vars, aggregation);
+      buildTable(buckets, vars);
+      renderWindRose(fdata, provider);
+
+      $("visuals").hidden = false;
+
+      let msg = `Loaded ${buckets.length} ${aggregation} period${buckets.length === 1 ? "" : "s"} for ${lake.name} (${start} to ${end}).` +
+        describeActiveFilters();
+      if (skipped.length) {
+        const reason = provider === "meteostat" ? "(not reported by month)" : "(hourly aggregation only)";
+        msg += ` Skipped ${skipped.map((v) => v.label).join(", ")} ${reason}.`;
       }
-      keepDays.add(dk);
+      setStatus(msg);
     }
-    if (!keepDays.size) throw new Error("No days in the selected range match the month/temperature filters.");
-    const fdata = filterDataToDays(data, keepDays);
-
-    const buckets = aggregate(fdata, vars, aggregation);
-    renderStatCards(fdata, vars);
-    renderLineChart(buckets, vars, aggregation);
-    buildTable(buckets, vars);
-    renderWindRose(fdata, provider);
-
-    $("visuals").hidden = false;
-
-    let msg = `Loaded ${buckets.length} ${aggregation} period${buckets.length === 1 ? "" : "s"} for ${lake.name} (${start} to ${end}).` +
-      describeActiveFilters();
-    if (skipped.length) {
-      const reason = provider === "meteostat" ? "(not reported by month)" : "(hourly aggregation only)";
-      msg += ` Skipped ${skipped.map((v) => v.label).join(", ")} ${reason}.`;
-    }
-    setStatus(msg);
   } catch (err) {
     setStatus(err.message || "Something went wrong while loading weather data.", true);
     console.error(err);
@@ -494,6 +536,102 @@ async function onLoad() {
     btn.disabled = false;
     btn.textContent = "Load weather";
   }
+}
+
+/**
+ * Compare mode: fetch both providers (each clamped to the latest date it can
+ * serve), then render the comparison views.
+ */
+async function loadCompare(opts) {
+  const { lake, start, end, vars, months, tempRange, tempActive, aggregation, omParams, msParams } = opts;
+
+  const omMaxEnd = maxEndDate("open-meteo", aggregation);
+  const msMaxEnd = maxEndDate("meteostat", aggregation);
+  const omEnd = end > omMaxEnd ? omMaxEnd : end;
+  const msEnd = end > msMaxEnd ? msMaxEnd : end;
+
+  const [omRaw, msRaw, omErr, msErr] = await (async () => {
+    // Each provider is fetched independently: if one fails (e.g. Open-Meteo
+    // hourly outside its 1-year window), the other still renders and the
+    // failure is reported in the status line.
+    let omR = null, msR = null, omE = null, msE = null;
+    const jobs = [];
+    if (omParams.length) {
+      jobs.push(fetchWeather("open-meteo", lake.lat, lake.lon, start, omEnd, omParams, aggregation,
+        aggregation === "hourly" ? { timezone: "UTC" } : {})
+        .then((d) => { omR = d; }).catch((e) => { omE = e; }));
+    }
+    if (msParams.length) {
+      jobs.push(fetchWeather("meteostat", lake.lat, lake.lon, start, msEnd, msParams, aggregation)
+        .then((d) => { msR = d; }).catch((e) => { msE = e; }));
+    }
+    await Promise.all(jobs);
+    return [omR, msR, omE, msE];
+  })();
+  if ((!omRaw || !omRaw.time.length) && (!msRaw || !msRaw.time.length)) {
+    throw new Error((omErr && omErr.message) || (msErr && msErr.message) ||
+      "No data returned for this date range.");
+  }
+
+  // Hourly timestamps are canonicalized so the two UTC series share bucket keys.
+  const omData = omRaw && omRaw.time.length ? canonicalizeTimes(omRaw, aggregation) : null;
+  const msData = msRaw && msRaw.time.length ? canonicalizeTimes(msRaw, aggregation) : null;
+
+  const omFiltered = omData ? applySharedFilters(omData, months, tempRange, tempActive) : null;
+  const msFiltered = msData ? applySharedFilters(msData, months, tempRange, tempActive) : null;
+  if (!omFiltered && !msFiltered) {
+    throw new Error("No days in the selected range match the month/temperature filters.");
+  }
+
+  const omBuckets = omFiltered ? aggregate(omFiltered, vars, aggregation) : [];
+  const msBuckets = msFiltered ? aggregate(msFiltered, vars, aggregation) : [];
+  const merged = mergeBuckets(omBuckets, msBuckets);
+
+  renderCompareSummary(omFiltered, msFiltered, vars);
+  renderCompareChart(merged, vars, aggregation);
+  buildCompareTable(merged, vars);
+  renderWindRoseCompare(omFiltered, msFiltered, vars);
+
+  $("visuals").hidden = false;
+
+  let msg = `Loaded ${merged.length} ${aggregation} period${merged.length === 1 ? "" : "s"} for ${lake.name} (${start} to ${end}): ` +
+    `Open-Meteo ${omBuckets.length}, Meteostat ${msBuckets.length} periods.` +
+    describeActiveFilters();
+  if (omEnd < end) msg += ` Open-Meteo data ends ${omEnd}.`;
+  if (msEnd < end) msg += ` Meteostat data ends ${msEnd}.`;
+  if (omErr) msg += ` Open-Meteo failed: ${omErr.message}`;
+  if (msErr) msg += ` Meteostat failed: ${msErr.message}`;
+  // Name the known per-provider gaps so "—" cells aren't a mystery.
+  const gaps = [];
+  if (aggregation !== "hourly" && vars.some((v) => HOURLY_ONLY_KEYS.includes(v.key))) {
+    gaps.push("humidity/pressure is Meteostat only");
+  }
+  if (aggregation === "monthly" && vars.some((v) => v.key === "wind_speed_10m" || v.key === "wind_direction_10m")) {
+    gaps.push("monthly wind is Open-Meteo only");
+  }
+  if (gaps.length) msg += ` Gaps shown as — (${gaps.join("; ")}).`;
+  setStatus(msg);
+}
+
+/** Hourly: trim timestamps to "YYYY-MM-DDTHH:MM" so both UTC series align. */
+function canonicalizeTimes(data, aggregation) {
+  if (aggregation !== "hourly") return data;
+  return { ...data, time: data.time.map((t) => t.slice(0, 16)) };
+}
+
+/**
+ * Union of two providers' bucket lists by label; each entry carries
+ * { label, om: stats|null, ms: stats|null }.
+ */
+function mergeBuckets(omBuckets, msBuckets) {
+  const map = new Map();
+  for (const b of omBuckets) map.set(b.label, { label: b.label, om: b.stats, ms: null });
+  for (const b of msBuckets) {
+    const e = map.get(b.label);
+    if (e) e.ms = b.stats;
+    else map.set(b.label, { label: b.label, om: null, ms: null });
+  }
+  return [...map.values()].sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
 }
 
 function setStatus(msg, isError) {
@@ -570,6 +708,8 @@ function overallStats(data, varDef) {
 // ---------------------------------------------------------------- stat cards
 
 function renderStatCards(data, vars) {
+  $("compare-wrap").hidden = true;
+  $("stat-cards").hidden = false;
   const wrap = $("stat-cards");
   wrap.innerHTML = "";
   const n = data.time.length;
@@ -607,6 +747,89 @@ function renderStatCards(data, vars) {
     card.append(label, value, subEl);
     wrap.appendChild(card);
   }
+}
+
+// ---------------------------------------------------------------- compare summary table
+
+/** { main, sub } display strings for one provider's overall stats of a variable. */
+function compareCellParts(stats, varDef) {
+  if (!stats) return { main: "—", sub: "" };
+  if (varDef.key === "precipitation") {
+    return stats.total === null || stats.total === undefined
+      ? { main: "—", sub: "" }
+      : { main: `${fmt(stats.total)} ${varDef.unit}`, sub: "total" };
+  }
+  if (varDef.key === "wind_direction_10m") {
+    return stats.prevailing === null || stats.prevailing === undefined
+      ? { main: "—", sub: "" }
+      : { main: `${compass16(stats.prevailing)} ${Math.round(stats.prevailing)}°`, sub: "prevailing" };
+  }
+  if (stats.mean === null || stats.mean === undefined) return { main: "—", sub: "" };
+  const parts = [];
+  if (stats.min !== null && stats.min !== undefined) parts.push(`min ${fmt(stats.min)}`);
+  if (stats.max !== null && stats.max !== undefined) parts.push(`max ${fmt(stats.max)}`);
+  return {
+    main: `${fmt(stats.mean)} ${varDef.unit}`,
+    sub: parts.length ? `${parts.join(" · ")} ${varDef.unit}` : "",
+  };
+}
+
+/** Signed "Meteostat minus Open-Meteo" delta for one variable, or "—". */
+function compareDelta(omStats, msStats, varDef) {
+  if (!omStats || !msStats || varDef.key === "wind_direction_10m") return "—";
+  const a = varDef.key === "precipitation" ? omStats.total : omStats.mean;
+  const b = varDef.key === "precipitation" ? msStats.total : msStats.mean;
+  if (a === null || a === undefined || b === null || b === undefined) return "—";
+  const d = b - a;
+  const sign = d > 0 ? "+" : d < 0 ? "−" : "";
+  return `${sign}${fmt(Math.abs(d))} ${varDef.unit}`;
+}
+
+function renderCompareSummary(omData, msData, vars) {
+  $("stat-cards").hidden = true;
+  const wrap = $("compare-wrap");
+  wrap.hidden = false;
+  const table = $("compare-table");
+  table.innerHTML = "";
+  const thead = document.createElement("thead");
+  const hr = document.createElement("tr");
+  for (const c of ["Variable", "Open-Meteo", "Meteostat", "Δ (MS − OM)"]) {
+    const th = document.createElement("th");
+    th.textContent = c;
+    hr.appendChild(th);
+  }
+  thead.appendChild(hr);
+  table.appendChild(thead);
+  const tbody = document.createElement("tbody");
+  for (const v of vars) {
+    const omStats = omData ? overallStats(omData, v) : null;
+    const msStats = msData ? overallStats(msData, v) : null;
+    const om = compareCellParts(omStats, v);
+    const ms = compareCellParts(msStats, v);
+    const tr = document.createElement("tr");
+    const tdVar = document.createElement("td");
+    tdVar.textContent = `${v.label} (${v.unit})`;
+    tr.appendChild(tdVar);
+    for (const cell of [om, ms]) {
+      const td = document.createElement("td");
+      const main = document.createElement("div");
+      main.className = "cmp-main";
+      main.textContent = cell.main;
+      td.appendChild(main);
+      if (cell.sub) {
+        const sub = document.createElement("div");
+        sub.className = "cmp-sub";
+        sub.textContent = cell.sub;
+        td.appendChild(sub);
+      }
+      tr.appendChild(td);
+    }
+    const tdD = document.createElement("td");
+    tdD.textContent = compareDelta(omStats, msStats, v);
+    tr.appendChild(tdD);
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
 }
 
 // ---------------------------------------------------------------- line chart
@@ -675,6 +898,89 @@ function renderLineChart(buckets, vars, aggregation) {
   });
 }
 
+/**
+ * Compare-mode line chart: both providers overlaid — Open-Meteo solid,
+ * Meteostat dashed, same color per variable. Providers with no data for a
+ * variable (e.g. Meteostat monthly wind) are skipped; the gap shows as "—"
+ * in the summary table.
+ */
+function renderCompareChart(merged, vars, aggregation) {
+  if (lineChart) { lineChart.destroy(); lineChart = null; }
+  if (typeof Chart === "undefined") return;
+
+  const labels = merged.map((b) => b.label);
+  const unitToAxis = new Map();
+  const scales = {};
+  let axisCount = 0;
+
+  const axisLabel = (v) => `${v.label} (${statDescriptor(v)}, ${v.unit})`;
+  for (const v of vars) {
+    if (!unitToAxis.has(v.unit)) {
+      const id = `y${axisCount++}`;
+      unitToAxis.set(v.unit, id);
+      scales[id] = {
+        type: "linear",
+        display: true,
+        position: axisCount === 1 ? "left" : "right",
+        title: { display: true, text: axisLabel(v) },
+        grid: { drawOnChartArea: axisCount === 1 },
+      };
+    }
+  }
+
+  const providers = [
+    { key: "om", name: "Open-Meteo", dash: [] },
+    { key: "ms", name: "Meteostat", dash: [6, 4] },
+  ];
+  const datasets = [];
+  for (const v of vars) {
+    for (const p of providers) {
+      const vals = merged.map((b) => {
+        const stats = b[p.key] && b[p.key][v.key];
+        return stats ? primaryStat(v.key, stats) : null;
+      });
+      if (vals.every((x) => x === null || x === undefined)) continue;
+      datasets.push({
+        label: `${axisLabel(v)} — ${p.name}`,
+        data: vals,
+        borderColor: v.color,
+        backgroundColor: v.color,
+        borderDash: p.dash,
+        yAxisID: unitToAxis.get(v.unit),
+        tension: 0.15,
+        pointRadius: 0,
+        spanGaps: true,
+      });
+    }
+  }
+
+  const modeNoun = aggregation === "hourly" ? "Hourly values"
+    : aggregation === "daily" ? "Daily averages" : "Monthly averages";
+  const notes = ["solid: Open-Meteo", "dashed: Meteostat"];
+  if (aggregation !== "hourly" && vars.some((v) => v.key === "precipitation")) {
+    notes.push("precipitation: totals");
+  }
+  const titleText = `${modeNoun} (${notes.join("; ")})`;
+
+  lineChart = new Chart($("line-chart"), {
+    type: "line",
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      aspectRatio: chartAspectRatio(),
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { position: "top" },
+        title: { display: true, text: titleText },
+      },
+      scales: {
+        x: { ticks: { maxTicksLimit: 14, maxRotation: 45 } },
+        ...scales,
+      },
+    },
+  });
+}
+
 // ---------------------------------------------------------------- data table
 
 function formatCell(varDef, stats) {
@@ -693,9 +999,22 @@ function formatCell(varDef, stats) {
 
 function buildTable(buckets, vars) {
   tableVars = vars;
+  $("data-table-note").hidden = true;
   tableRows = buckets.map((b) => ({
     label: b.label,
     cells: vars.map((v) => formatCell(v, b.stats)),
+  }));
+  tablePage = 0;
+  renderTable();
+}
+
+/** Compare mode: one column per variable, cells read "Open-Meteo / Meteostat". */
+function buildCompareTable(merged, vars) {
+  tableVars = vars;
+  $("data-table-note").hidden = false;
+  tableRows = merged.map((b) => ({
+    label: b.label,
+    cells: vars.map((v) => `${formatCell(v, b.om || {})} / ${formatCell(v, b.ms || {})}`),
   }));
   tablePage = 0;
   renderTable();
@@ -760,21 +1079,24 @@ function changePage(delta) {
 
 // ---------------------------------------------------------------- wind rose
 
-function renderWindRose(data, provider) {
+/**
+ * Draw one wind rose into the given canvas. emptyMsg covers the no-data case
+ * (null data, or the wind variables weren't fetched/selected).
+ */
+function drawWindRose(canvas, data, emptyMsg) {
   const windSpeedUnit = () =>
     (VARIABLES.find((v) => v.key === "wind_speed_10m") || {}).unit || "mph";
-  const canvas = $("wind-rose");
   const ctx = canvas.getContext("2d");
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
 
-  const speeds = data.values["wind_speed_10m"] || [];
-  const dirs = data.values["wind_direction_10m"] || [];
+  const speeds = (data && data.values["wind_speed_10m"]) || [];
+  const dirs = (data && data.values["wind_direction_10m"]) || [];
   if (!speeds.length || !dirs.length) {
     ctx.fillStyle = "#6b7c8d";
     ctx.font = "14px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("Select wind speed + direction to see the wind rose.", W / 2, H / 2);
+    ctx.fillText(emptyMsg, W / 2, H / 2);
     return;
   }
 
@@ -860,21 +1182,57 @@ function renderWindRose(data, provider) {
     ctx.fill();
     ctx.lineWidth = 1;
   }
+}
 
-  // Explain the data source: hourly mode uses every observation, daily/monthly
-  // mode uses one (dominant direction, mean speed) pair per day.
+/** Note text under the wind rose(s): what the wedges mean + data source. */
+function windRoseNote(data, provider) {
+  const res = data && data.resolution === "hourly"
+    ? " Built from every hourly observation in the range."
+    : " Built from one value per day (dominant direction and daily mean speed), " +
+      "so expect a coarser picture than hourly mode.";
+  const src = provider === "meteostat"
+    ? " Meteostat interpolates nearby stations (within 50 km)."
+    : "";
+  return "Each wedge points in the compass direction the wind <em>comes from</em>; " +
+    "its length is the average wind speed from that direction over the selected period. " +
+    "Rings are labeled in mph. The red arrow points at the compass direction the prevailing wind comes from." +
+    res + src;
+}
+
+/** Single-provider mode: one rose, provider label hidden. */
+function renderWindRose(data, provider) {
+  drawWindRose($("wind-rose"), data, "Select wind speed + direction to see the wind rose.");
+  $("rose-ms").hidden = true;
+  $("rose-label-om").hidden = true;
+  const noteEl = document.getElementById("wind-rose-note");
+  if (noteEl) noteEl.innerHTML = windRoseNote(data, provider);
+}
+
+/** Empty-rose message for compare mode: no data vs. wind not served here. */
+function roseEmptyMsg(data, providerName, windSelected) {
+  if (!data) return `No ${providerName} data for these variables.`;
+  if (!windSelected) return "Select wind speed + direction to see the wind rose.";
+  return `${providerName} doesn't report wind at this aggregation.`;
+}
+
+/** Compare mode: two roses side by side, one per provider. */
+function renderWindRoseCompare(omData, msData, vars) {
+  const windSelected = vars.some((v) => v.key === "wind_speed_10m" || v.key === "wind_direction_10m");
+  drawWindRose($("wind-rose"), omData, roseEmptyMsg(omData, "Open-Meteo", windSelected));
+  drawWindRose($("wind-rose-ms"), msData, roseEmptyMsg(msData, "Meteostat", windSelected));
+  $("rose-ms").hidden = false;
+  $("rose-label-om").hidden = false;
+  const data = omData || msData;
   const noteEl = document.getElementById("wind-rose-note");
   if (noteEl) {
     noteEl.innerHTML =
       "Each wedge points in the compass direction the wind <em>comes from</em>; " +
       "its length is the average wind speed from that direction over the selected period. " +
       "Rings are labeled in mph. The red arrow points at the compass direction the prevailing wind comes from." +
-      (data.resolution === "hourly"
+      (data && data.resolution === "hourly"
         ? " Built from every hourly observation in the range."
         : " Built from one value per day (dominant direction and daily mean speed), " +
           "so expect a coarser picture than hourly mode.") +
-      (provider === "meteostat"
-        ? " Meteostat interpolates nearby stations (within 50 km)."
-        : "");
+      " Left: Open-Meteo (historic forecast data). Right: Meteostat (station data).";
   }
 }
