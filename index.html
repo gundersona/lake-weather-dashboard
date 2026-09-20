@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
-  <link rel="stylesheet" href="css/styles.css?v=9">
+  <link rel="stylesheet" href="css/styles.css?v=10">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
@@ -119,6 +119,7 @@
           <label class="check"><input type="checkbox" data-var="surface_pressure" checked> Pressure</label>
           <label class="check"><input type="checkbox" data-var="precipitation" checked> Precipitation</label>
           <label class="check"><input type="checkbox" data-var="wind_speed_10m" checked> Wind speed</label>
+          <label class="check"><input type="checkbox" data-var="wind_gusts_10m" checked> Peak gust</label>
           <label class="check"><input type="checkbox" data-var="wind_direction_10m" checked> Wind direction</label>
         </fieldset>
 
@@ -253,11 +254,11 @@
     <p>Data: <a href="https://open-meteo.com/">Open-Meteo</a> (ERA5 reanalysis, interpolated to lake coordinates) or <a href="https://meteostat.net/">Meteostat</a> (weather-station observations, interpolated to lake coordinates). Lake locations: USGS GNIS. Lake areas: USGS NHD.</p>
   </footer>
 
-  <script src="js/config.js" defer></script>
-  <script src="js/meteostat.js?v=3" defer></script>
-  <script src="js/providers.js?v=8" defer></script>
+  <script src="js/config.js?v=1" defer></script>
+  <script src="js/meteostat.js?v=4" defer></script>
+  <script src="js/providers.js?v=9" defer></script>
   <script src="js/lakes.js?v=1" defer></script>
-  <script src="js/app.js?v=10" defer></script>
+  <script src="js/app.js?v=11" defer></script>
   <script src="js/analysis.js?v=8" defer></script>
 </body>
 </html>

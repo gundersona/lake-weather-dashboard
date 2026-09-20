@@ -257,6 +257,16 @@ legend { font-weight: 600; font-size: 0.85rem; padding: 0 0.4rem; }
 
 #data-table thead th, #analysis-table thead th, #compare-table thead th { background: #f2f7fb; font-weight: 700; }
 
+/* Data-table footnote explaining max/min for the current aggregation. */
+#data-table tfoot td.table-footnote {
+  text-align: left;
+  white-space: normal;
+  font-size: 0.78rem;
+  color: #5b6b7a;
+  border-bottom: none;
+  padding-top: 0.6rem;
+}
+
 #analysis-table button {
   padding: 0.35rem 0.8rem;
   border: 1px solid var(--border);

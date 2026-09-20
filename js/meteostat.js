@@ -45,8 +45,8 @@ const MS_CACHE_MAX = 4000;   // parsed station-year files kept (LRU)
 
 /** Bulk columns parsed per product (subset of each file's columns). */
 const MS_COLUMNS = {
-  hourly: ["temp", "rhum", "prcp", "wdir", "wspd", "pres"],
-  daily: ["temp", "tmin", "tmax", "rhum", "prcp", "wspd", "pres"],
+  hourly: ["temp", "rhum", "prcp", "wdir", "wspd", "wpgt", "pres"],
+  daily: ["temp", "tmin", "tmax", "rhum", "prcp", "wspd", "wpgt", "pres"],
 };
 
 /**
@@ -61,6 +61,7 @@ const MS_HOURLY_SPECS = [
   { bulk: "pres", key: "surface_pressure", convert: (v) => v },
   { bulk: "prcp", key: "precipitation", convert: msMmToIn },
   { bulk: "wspd", key: "wind_speed_10m", convert: msKmhToMph },
+  { bulk: "wpgt", key: "wind_gusts_10m", convert: msKmhToMph },
   { bulk: "wdir", key: "wind_direction_10m", convert: (v) => v, categorical: true },
 ];
 const MS_DAILY_SPECS = [
@@ -71,6 +72,7 @@ const MS_DAILY_SPECS = [
   { bulk: "pres", key: "surface_pressure", convert: (v) => v },
   { bulk: "prcp", key: "precipitation", convert: msMmToIn },
   { bulk: "wspd", key: "wind_speed_10m", convert: msKmhToMph },
+  { bulk: "wpgt", key: "wind_gusts_10m", convert: msKmhToMph },
 ];
 
 // ---------------------------------------------------------------- units

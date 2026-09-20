@@ -11,6 +11,7 @@ const DAILY_MAP = {
   temperature_2m: ["temperature_2m_max", "temperature_2m_min", "temperature_2m_mean"],
   precipitation: ["precipitation_sum"],
   wind_speed_10m: ["wind_speed_10m_max", "wind_speed_10m_mean"],
+  wind_gusts_10m: ["wind_gusts_10m_max"],
   wind_direction_10m: ["wind_direction_10m_dominant"],
 };
 /** Params with no Open-Meteo daily equivalent (hourly aggregation only). */
@@ -128,6 +129,7 @@ async function fetchDaily(lat, lon, start, end, params) {
     values["wind_speed_10m"] = col("wind_speed_10m_mean");
     values["wind_speed_10m_max"] = col("wind_speed_10m_max");
   }
+  if (params.includes("wind_gusts_10m")) values["wind_gusts_10m_max"] = col("wind_gusts_10m_max");
   if (params.includes("wind_direction_10m")) values["wind_direction_10m"] = col("wind_direction_10m_dominant");
   return { time: daily.time, values, resolution: "daily" };
 }
@@ -179,12 +181,13 @@ async function fetchMeteostat(lat, lon, start, end, params, aggregation = "hourl
   if (start > end) {
     throw new Error("From date must be before the To date.");
   }
-  // Monthly wind would need the hourly bulk for all years (wind direction
-  // isn't in the daily files) — cost-prohibitive, so it's skipped and the
-  // UI says so. Everything else comes from the daily bulk files.
+  // Monthly wind direction would need the hourly bulk for all years (wind
+  // direction isn't in the daily files) — cost-prohibitive, so it's skipped
+  // and the UI says so. Wind speed and gust come from the daily bulk files
+  // (true daily maxima via the hourly bulk, as in daily mode).
   let effParams = params;
   if (aggregation === "monthly") {
-    effParams = params.filter((p) => p !== "wind_speed_10m" && p !== "wind_direction_10m");
+    effParams = params.filter((p) => p !== "wind_direction_10m");
   }
   // Monthly is served as daily series (resolution "daily") and bucketed by
   // the app, exactly like the Open-Meteo path — so the shared month/temp

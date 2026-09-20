@@ -42,5 +42,6 @@ const VARIABLES = [
   { key: "surface_pressure", label: "Pressure", unit: "hPa", param: "surface_pressure", stats: ["mean", "min", "max"], color: "#9b59b6" },
   { key: "precipitation", label: "Precipitation", unit: "in", param: "precipitation", stats: ["total"], color: "#2ecc71" },
   { key: "wind_speed_10m", label: "Wind speed", unit: "mph", param: "wind_speed_10m", stats: ["mean", "max"], color: "#f39c12" },
+  { key: "wind_gusts_10m", label: "Peak gust", unit: "mph", param: "wind_gusts_10m", stats: ["max"], color: "#d35400" },
   { key: "wind_direction_10m", label: "Wind direction", unit: "\u00B0", param: "wind_direction_10m", stats: ["prevailing"], color: "#7f8c8d" },
 ];

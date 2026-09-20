@@ -23,7 +23,10 @@ let selectedDot = null;
 let lineChart = null;
 let compareCharts = [];
 let tableRows = [];
-let tableColumns = [];
+/** Header rows for the data table: [[{ text, colspan?, rowspan? }, ...], ...]. */
+let tableHeaderRows = [];
+/** Footnote explaining max/min for the current aggregation; "" when none. */
+let tableFooter = "";
 let tablePage = 0;
 /** { filename, headers, rows } for the Download CSV button; null when no table built. */
 let csvData = null;
@@ -497,7 +500,7 @@ async function onLoad() {
     ? fetchParams.filter((p) => !HOURLY_ONLY_KEYS.includes(p))
     : fetchParams;
   const msParams = isCompare && aggregation === "monthly"
-    ? fetchParams.filter((p) => p !== "wind_speed_10m" && p !== "wind_direction_10m")
+    ? fetchParams.filter((p) => p !== "wind_direction_10m")
     : fetchParams;
 
   const btn = $("load-btn");
@@ -632,8 +635,8 @@ async function loadCompare(opts) {
   if (aggregation !== "hourly" && vars.some((v) => HOURLY_ONLY_KEYS.includes(v.key))) {
     gaps.push("humidity/pressure is Meteostat only");
   }
-  if (aggregation === "monthly" && vars.some((v) => v.key === "wind_speed_10m" || v.key === "wind_direction_10m")) {
-    gaps.push("monthly wind is Open-Meteo only");
+  if (aggregation === "monthly" && vars.some((v) => v.key === "wind_direction_10m")) {
+    gaps.push("monthly wind direction is Open-Meteo only");
   }
   if (gaps.length) msg += ` Gaps shown as — (${gaps.join("; ")}).`;
   setStatus(msg);
@@ -722,15 +725,9 @@ function bucketKey(iso, mode) {
  * the mean series.
  */
 function seriesFor(data, varDef, stat) {
-  if (data.resolution === "daily") {
-    if (varDef.key === "temperature_2m" && (stat === "min" || stat === "max")) {
-      const extra = data.values[`temperature_2m_${stat}`];
-      if (Array.isArray(extra)) return extra;
-    }
-    if (varDef.key === "wind_speed_10m" && stat === "max") {
-      const extra = data.values["wind_speed_10m_max"];
-      if (Array.isArray(extra)) return extra;
-    }
+  if (data.resolution === "daily" && (stat === "min" || stat === "max")) {
+    const extra = data.values[`${varDef.key}_${stat}`];
+    if (Array.isArray(extra)) return extra;
   }
   return data.values[varDef.param] || [];
 }
@@ -1074,35 +1071,86 @@ function formatCell(varDef, stats) {
   return parts.join(" / ") || "—";
 }
 
-function columnHeader(v) {
-  const headerStat = v.key === "precipitation" ? "total"
-    : v.key === "wind_direction_10m" ? "prevailing" : "avg / min / max";
-  return `${v.label} (${v.unit}) — ${headerStat}`;
+/**
+ * Table column specs for the current variable selection + aggregation.
+ * Wind is split into per-stat columns — hourly: avg + peak gust;
+ * daily/monthly: avg + max + peak gust. Every other variable keeps one
+ * column with its stats inline. Each spec: { varDef, stat, group } where
+ * stat is null for the combined column.
+ */
+function tableColumnSpecs(vars, aggregation) {
+  const specs = [];
+  for (const v of vars) {
+    if (v.key === "wind_speed_10m") {
+      specs.push({ varDef: v, stat: "mean", group: `Wind speed (${v.unit}): avg` });
+      if (aggregation !== "hourly") {
+        specs.push({ varDef: v, stat: "max", group: `Wind speed (${v.unit}): max` });
+      }
+      continue;
+    }
+    if (v.key === "wind_gusts_10m") {
+      specs.push({ varDef: v, stat: "max", group: `Peak gust (${v.unit})` });
+      continue;
+    }
+    const headerStat = v.key === "precipitation" ? "total"
+      : v.key === "wind_direction_10m" ? "prevailing" : "avg / min / max";
+    specs.push({ varDef: v, stat: null, group: `${v.label} (${v.unit}): ${headerStat}` });
+  }
+  return specs;
+}
+
+/** Cell text for one column spec: a single stat, or all stats inline. */
+function specCell(spec, stats) {
+  if (spec.stat === null) return formatCell(spec.varDef, stats);
+  const s = stats[spec.varDef.key];
+  if (!s) return "—";
+  const v = s[spec.stat];
+  return v === undefined || v === null ? "—" : fmt(v);
+}
+
+/** Footnote explaining what max/min mean for the selected aggregation. */
+function tableFooterText(aggregation) {
+  if (aggregation === "hourly") {
+    return "Hourly: each row is one hour. Avg/min/max are that hour's observed values; peak gust is the hour's highest gust.";
+  }
+  if (aggregation === "daily") {
+    return "Daily: avg = 24-hour mean (includes nighttime); max = highest value within the day — for wind, the highest hourly mean; peak gust = the day's highest gust.";
+  }
+  return "Monthly: values aggregate the daily series — avg = mean of daily values, max/min = highest/lowest daily value in the month, precipitation total = sum; peak gust = the month's highest daily peak gust.";
 }
 
 function buildTable(buckets, vars, meta) {
-  tableColumns = vars.map(columnHeader);
+  const specs = tableColumnSpecs(vars, meta.aggregation);
+  tableHeaderRows = [[{ text: "Period" }, ...specs.map((s) => ({ text: s.group }))]];
   tableRows = buckets.map((b) => ({
     label: b.label,
-    cells: vars.map((v) => formatCell(v, b.stats)),
+    cells: specs.map((s) => specCell(s, b.stats)),
   }));
   tablePage = 0;
-  setCsvData(meta, ["Period", ...tableColumns], tableRows.map((r) => [r.label, ...r.cells]));
+  tableFooter = tableFooterText(meta.aggregation);
+  setCsvData(meta, ["Period", ...specs.map((s) => s.group)], tableRows.map((r) => [r.label, ...r.cells]));
   renderTable();
 }
 
-/** Compare mode: two columns per variable — one for each provider. */
+/**
+ * Compare mode: the variable/stat group spans a column pair and the
+ * provider names (Open-Meteo / Meteostat) sit in a second header row.
+ */
 function buildCompareTable(merged, vars, meta) {
-  tableColumns = vars.flatMap((v) => [
-    `${columnHeader(v)} — Open-Meteo`,
-    `${columnHeader(v)} — Meteostat`,
-  ]);
+  const specs = tableColumnSpecs(vars, meta.aggregation);
+  tableHeaderRows = [
+    [{ text: "Period", rowspan: 2 }, ...specs.map((s) => ({ text: s.group, colspan: 2 }))],
+    specs.flatMap(() => [{ text: "Open-Meteo" }, { text: "Meteostat" }]),
+  ];
   tableRows = merged.map((b) => ({
     label: b.label,
-    cells: vars.flatMap((v) => [formatCell(v, b.om || {}), formatCell(v, b.ms || {})]),
+    cells: specs.flatMap((s) => [specCell(s, b.om || {}), specCell(s, b.ms || {})]),
   }));
   tablePage = 0;
-  setCsvData(meta, ["Period", ...tableColumns], tableRows.map((r) => [r.label, ...r.cells]));
+  tableFooter = tableFooterText(meta.aggregation);
+  setCsvData(meta,
+    ["Period", ...specs.flatMap((s) => [`${s.group} (Open-Meteo)`, `${s.group} (Meteostat)`])],
+    tableRows.map((r) => [r.label, ...r.cells]));
   renderTable();
 }
 
@@ -1138,22 +1186,40 @@ function downloadCSV() {
 }
 
 function renderTable() {
-  const thead = $("data-table").querySelector("thead");
-  const tbody = $("data-table").querySelector("tbody");
+  const table = $("data-table");
+  const thead = table.querySelector("thead");
+  const tbody = table.querySelector("tbody");
   thead.innerHTML = "";
   tbody.innerHTML = "";
   $("data-table-note").hidden = true;
 
-  const hr = document.createElement("tr");
-  const th0 = document.createElement("th");
-  th0.textContent = "Period";
-  hr.appendChild(th0);
-  for (const header of tableColumns) {
-    const th = document.createElement("th");
-    th.textContent = header;
-    hr.appendChild(th);
+  for (const row of tableHeaderRows) {
+    const tr = document.createElement("tr");
+    for (const h of row) {
+      const th = document.createElement("th");
+      th.textContent = h.text;
+      if (h.colspan > 1) th.colSpan = h.colspan;
+      if (h.rowspan > 1) th.rowSpan = h.rowspan;
+      tr.appendChild(th);
+    }
+    thead.appendChild(tr);
   }
-  thead.appendChild(hr);
+
+  let tfoot = table.querySelector("tfoot");
+  if (!tfoot) {
+    tfoot = document.createElement("tfoot");
+    table.appendChild(tfoot);
+  }
+  tfoot.innerHTML = "";
+  if (tableFooter) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = tableHeaderRows[0].reduce((n, h) => n + (h.colspan || 1), 0);
+    td.className = "table-footnote";
+    td.textContent = tableFooter;
+    tr.appendChild(td);
+    tfoot.appendChild(tr);
+  }
 
   const pages = Math.max(1, Math.ceil(tableRows.length / ROWS_PER_PAGE));
   tablePage = Math.min(Math.max(0, tablePage), pages - 1);
@@ -1175,7 +1241,7 @@ function renderTable() {
   if (slice.length === 0) {
     const tr = document.createElement("tr");
     const td = document.createElement("td");
-    td.colSpan = tableColumns.length + 1;
+    td.colSpan = tableHeaderRows[0].reduce((n, h) => n + (h.colspan || 1), 0);
     td.className = "empty-note";
     td.textContent = "No data.";
     tr.appendChild(td);
