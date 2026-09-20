@@ -793,10 +793,11 @@ function renderStatCards(data, vars) {
       big = s.prevailing === null ? "—" : `${compass16(s.prevailing)} ${Math.round(s.prevailing)}°`;
       sub = "prevailing direction";
     } else {
-      big = `${fmt(s.mean)} ${v.unit}`;
+      // Max-only variables (e.g. Peak gust) have no mean; lead with the max.
+      big = s.mean !== null && s.mean !== undefined ? `${fmt(s.mean)} ${v.unit}` : `${fmt(s.max)} ${v.unit}`;
       const parts = [];
       if (s.min !== null && s.min !== undefined) parts.push(`min ${fmt(s.min)}`);
-      if (s.max !== null && s.max !== undefined) parts.push(`max ${fmt(s.max)}`);
+      if (s.max !== null && s.max !== undefined && (s.mean !== null && s.mean !== undefined)) parts.push(`max ${fmt(s.max)}`);
       sub = parts.join(" · ") + (parts.length ? ` ${v.unit}` : "no data");
     }
 
@@ -829,7 +830,12 @@ function compareCellParts(stats, varDef) {
       ? { main: "—", sub: "" }
       : { main: `${compass16(stats.prevailing)} ${Math.round(stats.prevailing)}°`, sub: "prevailing" };
   }
-  if (stats.mean === null || stats.mean === undefined) return { main: "—", sub: "" };
+  if (stats.mean === null || stats.mean === undefined) {
+    // Max-only variables (e.g. Peak gust): show the max alone.
+    if (stats.max !== null && stats.max !== undefined)
+      return { main: `${fmt(stats.max)} ${varDef.unit}`, sub: "max" };
+    return { main: "—", sub: "" };
+  }
   const parts = [];
   if (stats.min !== null && stats.min !== undefined) parts.push(`min ${fmt(stats.min)}`);
   if (stats.max !== null && stats.max !== undefined) parts.push(`max ${fmt(stats.max)}`);
@@ -842,8 +848,9 @@ function compareCellParts(stats, varDef) {
 /** Signed "Meteostat minus Open-Meteo" delta for one variable, or "—". */
 function compareDelta(omStats, msStats, varDef) {
   if (!omStats || !msStats || varDef.key === "wind_direction_10m") return "—";
-  const a = varDef.key === "precipitation" ? omStats.total : omStats.mean;
-  const b = varDef.key === "precipitation" ? msStats.total : msStats.mean;
+  // Max-only variables (e.g. Peak gust) compare their max.
+  const pick = (s) => (varDef.key === "precipitation" ? s.total : s.mean ?? s.max);
+  const a = pick(omStats), b = pick(msStats);
   if (a === null || a === undefined || b === null || b === undefined) return "—";
   const d = b - a;
   const sign = d > 0 ? "+" : d < 0 ? "−" : "";
