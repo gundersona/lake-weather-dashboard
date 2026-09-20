@@ -36,7 +36,7 @@
 "use strict";
 
 const MS_BASE = "https://data.meteostat.net";
-const MS_STATION_FILE = "data/meteostat/stations.json";
+const MS_STATION_FILE = "data/meteostat/stations.json?v=2";
 const MS_LIMIT = 4;          // stations per point (library: nearby(..., 4))
 const MS_RADIUS_M = 50000;   // library nearby() default radius
 const MS_NEAREST_M = 5000;   // library distance_threshold
@@ -105,8 +105,8 @@ async function msDirectory() {
     msDirPromise = (async () => {
       const resp = await fetch(MS_STATION_FILE);
       if (!resp.ok) throw new Error(`Station directory unavailable (HTTP ${resp.status}).`);
-      const raw = await resp.json(); // [[id, lat, lon, elev], ...]
-      const dir = raw.map((r) => ({ id: r[0], lat: r[1], lon: r[2], elev: r[3] }));
+      const raw = await resp.json(); // [[id, lat, lon, elev, name], ...]
+      const dir = raw.map((r) => ({ id: r[0], lat: r[1], lon: r[2], elev: r[3], name: r[4] || r[0] }));
       msGrid = new Map();
       dir.forEach((s, i) => {
         const key = Math.floor(s.lat) + "," + Math.floor(s.lon);
@@ -150,7 +150,7 @@ async function msNearby(lat, lon, limit = MS_LIMIT, radiusM = MS_RADIUS_M) {
         seen.add(i);
         const s = dir[i];
         const d = msHaversineM(lat, lon, s.lat, s.lon);
-        if (d <= radiusM) cands.push({ id: s.id, lat: s.lat, lon: s.lon, dist: d });
+        if (d <= radiusM) cands.push({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, dist: d });
       }
     }
   }

@@ -1206,7 +1206,7 @@ function bearingTo(lat1, lon1, lat2, lon2) {
 }
 
 /**
- * Summary table of the Meteostat stations used for interpolation: station id,
+ * Summary table of the Meteostat stations used for interpolation: station name,
  * distance from the lake, and compass direction from the lake (e.g. "8 mi NE").
  */
 function renderStationTable(stations, lake) {
@@ -1231,13 +1231,13 @@ function renderStationTable(stations, lake) {
   const rows = [...stations].sort((a, b) => a.dist - b.dist);
   for (const s of rows) {
     const tr = document.createElement("tr");
-    const tdId = document.createElement("td");
-    tdId.textContent = s.id;
+    const tdName = document.createElement("td");
+    tdName.textContent = s.name || s.id;
     const tdDist = document.createElement("td");
     tdDist.textContent = `${Math.round(s.dist / 1609.344)} mi`;
     const tdDir = document.createElement("td");
     tdDir.textContent = compass16(bearingTo(lake.lat, lake.lon, s.lat, s.lon));
-    tr.append(tdId, tdDist, tdDir);
+    tr.append(tdName, tdDist, tdDir);
     tbody.appendChild(tr);
   }
   card.hidden = false;
