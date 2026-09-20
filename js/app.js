@@ -793,12 +793,18 @@ function renderStatCards(data, vars) {
       big = s.prevailing === null ? "—" : `${compass16(s.prevailing)} ${Math.round(s.prevailing)}°`;
       sub = "prevailing direction";
     } else {
+      const hasMean = s.mean !== null && s.mean !== undefined;
       // Max-only variables (e.g. Peak gust) have no mean; lead with the max.
-      big = s.mean !== null && s.mean !== undefined ? `${fmt(s.mean)} ${v.unit}` : `${fmt(s.max)} ${v.unit}`;
-      const parts = [];
-      if (s.min !== null && s.min !== undefined) parts.push(`min ${fmt(s.min)}`);
-      if (s.max !== null && s.max !== undefined && (s.mean !== null && s.mean !== undefined)) parts.push(`max ${fmt(s.max)}`);
-      sub = parts.join(" · ") + (parts.length ? ` ${v.unit}` : "no data");
+      big = hasMean ? `${fmt(s.mean)} ${v.unit}` : `${fmt(s.max)} ${v.unit}`;
+      if (hasMean) {
+        const parts = [];
+        if (s.min !== null && s.min !== undefined) parts.push(`min ${fmt(s.min)}`);
+        if (s.max !== null && s.max !== undefined) parts.push(`max ${fmt(s.max)}`);
+        sub = parts.join(" · ") + (parts.length ? ` ${v.unit}` : "no data");
+      } else {
+        const periodWord = data.resolution === "daily" ? "days" : "hours";
+        sub = s.max !== null && s.max !== undefined ? `max over ${n} ${periodWord}` : "no data";
+      }
     }
 
     const label = document.createElement("div");
