@@ -285,12 +285,12 @@ function maybeProviderNotice() {
     setStatus(
       "Meteostat interpolates the nearest weather stations (within 50 km). " +
       "First use loads a 450 KB station directory. Monthly mode skips wind " +
-      "speed and direction (not reported monthly).",
+      "direction (not reported monthly).",
       false);
   } else if (provider === "both") {
     setStatus(
       "Compare mode loads both providers. Gaps are shown as —: monthly wind " +
-      "is Open-Meteo only, daily humidity and pressure are Meteostat only, " +
+      "direction is Open-Meteo only, daily humidity and pressure are Meteostat only, " +
       "and each provider covers dates up to its own freshness limit.",
       false);
   } else {
@@ -465,21 +465,21 @@ async function onLoad() {
 
   // Variables a single provider can't serve at this aggregation are skipped
   // with a note: Open-Meteo has no daily humidity/pressure; Meteostat has no
-  // monthly wind (it's not reported monthly). In compare mode nothing is
-  // dropped — each provider fetches what it can and gaps render as "—".
+  // monthly wind direction. In compare mode nothing is dropped — each provider
+  // fetches what it can and gaps render as "—".
   let skipped = [];
   if (!isCompare) {
     if (provider === "open-meteo" && aggregation !== "hourly") {
       skipped = vars.filter((v) => HOURLY_ONLY_KEYS.includes(v.key));
       vars = vars.filter((v) => !HOURLY_ONLY_KEYS.includes(v.key));
     } else if (provider === "meteostat" && aggregation === "monthly") {
-      skipped = vars.filter((v) => v.key === "wind_speed_10m" || v.key === "wind_direction_10m");
-      vars = vars.filter((v) => v.key !== "wind_speed_10m" && v.key !== "wind_direction_10m");
+      skipped = vars.filter((v) => v.key === "wind_direction_10m");
+      vars = vars.filter((v) => v.key !== "wind_direction_10m");
     }
     if (vars.length === 0) {
       const why = provider === "open-meteo"
         ? "humidity and pressure need hourly mode"
-        : "Meteostat doesn't report wind by month";
+        : "Meteostat doesn't report wind direction by month";
       setStatus("None of the selected variables are available for " + aggregation +
         " aggregation — " + why + ".", true);
       return;
