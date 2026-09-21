@@ -298,8 +298,8 @@ function maybeProviderNotice() {
   }
   if (aggNote) {
     aggNote.textContent = provider === "both"
-      ? "Humidity & pressure: hourly for Open-Meteo, daily OK via Meteostat. Monthly goes back to 1940."
-      : "Humidity & pressure need hourly. Monthly goes back to 1940.";
+      ? "Humidity & pressure: hourly for Open-Meteo, daily OK via Meteostat. Monthly goes back 50 years."
+      : "Humidity & pressure need hourly. Monthly goes back 50 years.";
   }
 }
 
@@ -573,7 +573,7 @@ async function loadCompare(opts) {
 
   const [omRaw, msRaw, omErr, msErr] = await (async () => {
     // Each provider is fetched independently: if one fails (e.g. Open-Meteo
-    // hourly outside its 1-year window), the other still renders and the
+    // hourly outside its 30-year window), the other still renders and the
     // failure is reported in the status line.
     let omR = null, msR = null, omE = null, msE = null;
     const jobs = [];
@@ -912,11 +912,27 @@ function renderCompareSummary(omData, msData, vars) {
 
 // ---------------------------------------------------------------- line chart
 
+// 30 years of hourly data is ~263k points: stride-sample the chart series so
+// Chart.js stays responsive. Tables, summaries, and CSV keep full resolution.
+const CHART_MAX_POINTS = 4000;
+
+/** Indices [0..n) strided down to at most maxPoints, always keeping the endpoints. Null if no sampling needed. */
+function strideIndices(n, maxPoints) {
+  if (n <= maxPoints) return null;
+  const stride = Math.ceil(n / maxPoints);
+  const idx = [];
+  for (let i = 0; i < n; i += stride) idx.push(i);
+  if (idx[idx.length - 1] !== n - 1) idx.push(n - 1);
+  return idx;
+}
+
 function renderLineChart(buckets, vars, aggregation) {
   if (lineChart) { lineChart.destroy(); lineChart = null; }
   if (typeof Chart === "undefined") return;
 
-  const labels = buckets.map((b) => b.label);
+  const stride = strideIndices(buckets.length, CHART_MAX_POINTS);
+  const chartBuckets = stride ? stride.map((i) => buckets[i]) : buckets;
+  const labels = chartBuckets.map((b) => b.label);
   const unitToAxis = new Map();
   const scales = {};
   let axisCount = 0;
@@ -938,7 +954,7 @@ function renderLineChart(buckets, vars, aggregation) {
 
   const datasets = vars.map((v) => ({
     label: axisLabel(v),
-    data: buckets.map((b) => primaryStat(v.key, b.stats[v.key])),
+    data: chartBuckets.map((b) => primaryStat(v.key, b.stats[v.key])),
     borderColor: v.color,
     backgroundColor: v.color,
     yAxisID: unitToAxis.get(v.unit),
@@ -955,6 +971,7 @@ function renderLineChart(buckets, vars, aggregation) {
   if (aggregation !== "hourly" && vars.some((v) => v.key === "precipitation")) {
     notes.push("precipitation: totals");
   }
+  if (stride) notes.push(`chart sampled to every ${stride[1] - stride[0]}th point`);
   const titleText = notes.length ? `${modeNoun} (${notes.join("; ")})` : modeNoun;
 
   lineChart = new Chart($("line-chart"), {
@@ -993,7 +1010,9 @@ function renderCompareCharts(merged, vars, aggregation) {
 
   const wrap = $("compare-charts");
   wrap.innerHTML = "";
-  const labels = merged.map((b) => b.label);
+  const stride = strideIndices(merged.length, CHART_MAX_POINTS);
+  const chartMerged = stride ? stride.map((i) => merged[i]) : merged;
+  const labels = chartMerged.map((b) => b.label);
   const modeNoun = aggregation === "hourly" ? "Hourly values"
     : aggregation === "daily" ? "Daily averages" : "Monthly averages";
 
@@ -1005,7 +1024,7 @@ function renderCompareCharts(merged, vars, aggregation) {
   for (const v of vars) {
     const datasets = [];
     for (const p of providers) {
-      const vals = merged.map((b) => {
+      const vals = chartMerged.map((b) => {
         const stats = b[p.key] && b[p.key][v.key];
         return stats ? primaryStat(v.key, stats) : null;
       });
@@ -1028,6 +1047,7 @@ function renderCompareCharts(merged, vars, aggregation) {
     const cap = document.createElement("figcaption");
     let capText = `${v.label} (${statDescriptor(v)}, ${v.unit}) — ${modeNoun} (solid: Open-Meteo; dashed: Meteostat)`;
     if (aggregation !== "hourly" && v.key === "precipitation") capText += "; totals";
+    if (stride) capText += `; chart shows every ${stride[1] - stride[0]}th point`;
     cap.textContent = capText;
     const canvas = document.createElement("canvas");
     fig.appendChild(cap);

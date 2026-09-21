@@ -254,19 +254,31 @@ async function msFetchStationYear(product, stationId, year, signal) {
 /** Fetch every station-year in the cartesian product; stationId -> merged Map|null. */
 async function msLoadMany(product, stations, years, signal, onFileDone) {
   const data = new Map();
-  await Promise.all(stations.map(async (st) => {
-    const perYear = await Promise.all(
-      years.map((y) => msFetchStationYear(product, st.id, y, signal).then((m) => {
+  // Bounded concurrency: a 30-year hourly pull is up to 120 small files;
+  // fetch a few at a time instead of firing them all at once.
+  const MAX_CONCURRENT_FILES = 8;
+  const queue = [];
+  for (const st of stations) for (const y of years) queue.push([st, y]);
+  const perStation = new Map(stations.map((st) => [st.id, []]));
+  let next = 0;
+  async function worker() {
+    while (next < queue.length) {
+      const [st, y] = queue[next++];
+      const m = await msFetchStationYear(product, st.id, y, signal).then((mm) => {
         if (onFileDone) onFileDone();
-        return m;
-      }))
-    );
+        return mm;
+      });
+      perStation.get(st.id).push(m);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(MAX_CONCURRENT_FILES, queue.length) }, worker));
+  for (const st of stations) {
     const merged = new Map();
-    for (const m of perYear) {
+    for (const m of perStation.get(st.id)) {
       if (m) for (const [k, v] of m) merged.set(k, v);
     }
     data.set(st.id, merged.size ? merged : null);
-  }));
+  }
   return data;
 }
 

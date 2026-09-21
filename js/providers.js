@@ -4,7 +4,9 @@
 
 const OPEN_METEO_ARCHIVE = "https://archive-api.open-meteo.com/v1/archive";
 const MIN_START = "1940-01-01";
-const HOURLY_MAX_SPAN_DAYS = 366;
+const HOURLY_MAX_YEARS = 30;
+const HOURLY_MAX_SPAN_DAYS = HOURLY_MAX_YEARS * 366; // 10,980 days
+const MONTHLY_MAX_YEARS = 50;
 
 /** Canonical hourly param -> Open-Meteo daily params (for daily/monthly aggregation). */
 const DAILY_MAP = {
@@ -96,7 +98,7 @@ async function fetchDaily(lat, lon, start, end, params) {
   const unsupported = params.filter((p) => HOURLY_ONLY_PARAMS.includes(p));
   if (unsupported.length) {
     throw new Error(
-      "Humidity and pressure are only available with hourly aggregation (past year). " +
+      "Humidity and pressure are only available with hourly aggregation (past 30 years). " +
       "Uncheck them or switch the aggregation to hourly."
     );
   }
@@ -148,10 +150,13 @@ async function fetchOpenMeteo(lat, lon, start, end, params, aggregation = "hourl
   if (start > end) {
     throw new Error("From date must be before the To date.");
   }
+  if (aggregation === "monthly" && start < yearsAgoISO(MONTHLY_MAX_YEARS)) {
+    throw new Error(`Monthly data is available for the past ${MONTHLY_MAX_YEARS} years only.`);
+  }
 
   if (aggregation === "hourly") {
-    if (start < yearsAgoISO(1) || daysBetween(start, end) > HOURLY_MAX_SPAN_DAYS) {
-      throw new Error("Hourly data is available for the past year only (max 366 days).");
+    if (start < yearsAgoISO(HOURLY_MAX_YEARS) || daysBetween(start, end) > HOURLY_MAX_SPAN_DAYS) {
+      throw new Error(`Hourly data is available for the past ${HOURLY_MAX_YEARS} years only (max ${HOURLY_MAX_SPAN_DAYS.toLocaleString("en-US")} days).`);
     }
     // Compare mode fetches Open-Meteo in UTC so hourly timestamps line up
     // with Meteostat's UTC bulk data; single-provider mode keeps local time.
@@ -163,7 +168,6 @@ async function fetchOpenMeteo(lat, lon, start, end, params, aggregation = "hourl
     }
     return fetchDaily(lat, lon, start, end, params);
   }
-  // monthly: full archive back to 1940, fetched as daily values and bucketed client-side
   return fetchDaily(lat, lon, start, end, params);
 }
 
@@ -180,6 +184,9 @@ async function fetchMeteostat(lat, lon, start, end, params, aggregation = "hourl
   }
   if (start > end) {
     throw new Error("From date must be before the To date.");
+  }
+  if (aggregation === "monthly" && start < yearsAgoISO(MONTHLY_MAX_YEARS)) {
+    throw new Error(`Monthly data is available for the past ${MONTHLY_MAX_YEARS} years only.`);
   }
   // Monthly wind direction would need the hourly bulk for all years (wind
   // direction isn't in the daily files) — cost-prohibitive, so it's skipped
