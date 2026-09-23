@@ -115,6 +115,11 @@ function init() {
   $("next-page").addEventListener("click", () => changePage(1));
   $("download-csv").addEventListener("click", downloadCSV);
   $("provider").addEventListener("change", maybeProviderNotice);
+  $("aggregation").addEventListener("change", () => {
+    maybeProviderNotice();
+    refreshDaylightRow();
+  });
+  refreshDaylightRow();
   $("zoom-lake-btn").addEventListener("click", () => {
     const lake = getSelectedLake();
     if (lake) highlightLake(lake, { zoom: true });
@@ -354,9 +359,33 @@ function formatAcres(km2) {
   return Math.round(ac).toLocaleString("en-US");
 }
 
+/** Show the 24hr/daylight toggle only when hourly aggregation is selected. */
+function refreshDaylightRow() {
+  const hourly = $("aggregation").value === "hourly";
+  $("daylight-row").hidden = !hourly;
+  $("daylight-note").hidden = !hourly;
+}
+
+/** True when the daylight toggle is on (only meaningful for hourly mode). */
+function daylightOnly() {
+  return $("aggregation").value === "hourly" && $("daylight-toggle").checked;
+}
+
+/**
+ * Drop nighttime hours from one provider's dataset when the daylight toggle
+ * is on, using sunrise/sunset computed from the lake's lat/lon. Runs before
+ * the shared filters so daily means, summaries, charts, the wind rose, the
+ * table, and the CSV all see daylight hours only.
+ */
+function applyDaylight(data, lake) {
+  if (!daylightOnly()) return data;
+  return filterDaylight(data, lake.lat, lake.lon, data.utcOffsetSeconds ?? null);
+}
+
 /** Human-readable summary of the active shared filters, for status lines. */
 function describeActiveFilters() {
   const parts = [];
+  if (daylightOnly()) parts.push("daylight hours only");
   const months = getActiveMonths();
   if (months.length < 12) parts.push("months: " + months.map((m) => MONTH_ABBR[m - 1]).join(", "));
   const t = getTempRange();
@@ -407,7 +436,8 @@ function filterDataToDays(data, keepDays) {
 /**
  * Apply the shared month + temperature filters to one provider's dataset:
  * keep whole days whose month is selected and whose daily mean temperature is
- * in range (hourly mode derives the daily mean from the 24 hourly values).
+ * in range (hourly mode derives the daily mean from the hourly values —
+ * daylight hours only when the daylight toggle is on).
  * Returns the filtered dataset, or null when no days match.
  */
 function applySharedFilters(data, months, tempRange, tempActive) {
@@ -519,12 +549,16 @@ async function onLoad() {
       await loadCompare({ lake, start, end, vars, months, tempRange, tempActive, aggregation, omParams, msParams });
     } else {
       setProviderProgress(provider, null, null, "Fetching…");
-      const data = await fetchWeather(provider, lake.lat, lake.lon, start, end, fetchParams, aggregation,
+      let data = await fetchWeather(provider, lake.lat, lake.lon, start, end, fetchParams, aggregation,
         provider === "meteostat"
           ? { onProgress: (done, total) => setProviderProgress("meteostat", done, total, `Station data ${done}/${total}`) }
           : undefined);
       setProviderDone(provider);
       if (!data.time.length) throw new Error("No data returned for this date range.");
+      data = applyDaylight(data, lake);
+      if (!data.time.length) {
+        throw new Error("No daylight hours in the selected range — the sun never rises there on these dates.");
+      }
 
       const fdata = applySharedFilters(data, months, tempRange, tempActive);
       if (!fdata) throw new Error("No days in the selected range match the month/temperature filters.");
@@ -600,9 +634,17 @@ async function loadCompare(opts) {
       "No data returned for this date range.");
   }
 
-  // Hourly timestamps are canonicalized so the two UTC series share bucket keys.
-  const omData = omRaw && omRaw.time.length ? canonicalizeTimes(omRaw, aggregation) : null;
-  const msData = msRaw && msRaw.time.length ? canonicalizeTimes(msRaw, aggregation) : null;
+  // Hourly timestamps are canonicalized so the two UTC series share bucket keys,
+  // then daylight filtering drops nighttime hours when the toggle is on.
+  let omData = omRaw && omRaw.time.length ? canonicalizeTimes(omRaw, aggregation) : null;
+  let msData = msRaw && msRaw.time.length ? canonicalizeTimes(msRaw, aggregation) : null;
+  if (daylightOnly()) {
+    if (omData) omData = applyDaylight(omData, lake);
+    if (msData) msData = applyDaylight(msData, lake);
+    if ((!omData || !omData.time.length) && (!msData || !msData.time.length)) {
+      throw new Error("No daylight hours in the selected range — the sun never rises there on these dates.");
+    }
+  }
 
   const omFiltered = omData ? applySharedFilters(omData, months, tempRange, tempActive) : null;
   const msFiltered = msData ? applySharedFilters(msData, months, tempRange, tempActive) : null;

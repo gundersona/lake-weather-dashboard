@@ -73,7 +73,7 @@ async function fetchJson(url, what) {
   if (!data[what] || !Array.isArray(data[what].time)) {
     throw new Error(`Open-Meteo returned an unexpected response (no ${what} data).`);
   }
-  return data[what];
+  return data;
 }
 
 async function fetchHourly(lat, lon, start, end, params, timezone = "auto") {
@@ -86,12 +86,15 @@ async function fetchHourly(lat, lon, start, end, params, timezone = "auto") {
     hourly: params.join(","),
     timezone,
   });
-  const hourly = await fetchJson(url, "hourly");
+  const data = await fetchJson(url, "hourly");
+  const hourly = data.hourly;
   const values = {};
   for (const p of params) {
     values[p] = Array.isArray(hourly[p]) ? hourly[p] : [];
   }
-  return { time: hourly.time, values, resolution: "hourly" };
+  // utc_offset_seconds lets callers convert the local wall-clock timestamps
+  // (timezone=auto) to UTC instants — needed for daylight filtering.
+  return { time: hourly.time, values, resolution: "hourly", utcOffsetSeconds: data.utc_offset_seconds ?? null };
 }
 
 async function fetchDaily(lat, lon, start, end, params) {
@@ -115,7 +118,8 @@ async function fetchDaily(lat, lon, start, end, params) {
     daily: dailyParams.join(","),
     timezone: "auto", // required when daily variables are requested
   });
-  const daily = await fetchJson(url, "daily");
+  const data = await fetchJson(url, "daily");
+  const daily = data.daily;
   const n = daily.time.length;
   const col = (name) => (Array.isArray(daily[name]) ? daily[name] : new Array(n).fill(null));
 

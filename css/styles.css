@@ -429,3 +429,61 @@ footer a { color: var(--accent); }
 
   .check { padding: 0.6rem 0; }
 }
+
+/* 24hr / daylight toggle (hourly mode only). */
+#daylight-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.6rem 0 0.2rem;
+  font-size: 0.92rem;
+}
+#daylight-row[hidden] { display: none; }
+.daylight-end { color: var(--muted, #64748b); }
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 30px;
+  flex: none;
+}
+.switch input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+}
+.switch .track {
+  position: absolute;
+  inset: 0;
+  background: #cbd5e1;
+  border-radius: 15px;
+  transition: background 0.15s;
+  pointer-events: none;
+}
+.switch .track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: left 0.15s;
+}
+.switch input:checked + .track { background: var(--accent, #2563eb); }
+.switch input:checked + .track::after { left: 25px; }
+.switch input:focus-visible + .track { outline: 2px solid var(--accent, #2563eb); outline-offset: 2px; }
+.vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

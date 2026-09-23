@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
-  <link rel="stylesheet" href="css/styles.css?v=10">
+  <link rel="stylesheet" href="css/styles.css?v=11">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
@@ -111,6 +111,12 @@
           <option value="monthly">Monthly (past 50 years)</option>
         </select>
         <p class="empty-note">Humidity &amp; pressure need hourly. Monthly goes back 50 years.</p>
+        <div id="daylight-row" hidden>
+          <span class="daylight-end">24hr</span>
+          <label class="switch"><input type="checkbox" id="daylight-toggle"><span class="track" aria-hidden="true"></span><span class="vh">Daylight hours only</span></label>
+          <span class="daylight-end">Daylight</span>
+        </div>
+        <p class="empty-note" id="daylight-note" hidden>Daylight keeps only hours between sunrise and sunset, computed from the lake's latitude and longitude.</p>
 
         <fieldset>
           <legend>Variables</legend>
@@ -256,9 +262,10 @@
 
   <script src="js/config.js?v=1" defer></script>
   <script src="js/meteostat.js?v=5" defer></script>
-  <script src="js/providers.js?v=10" defer></script>
+  <script src="js/daylight.js?v=1" defer></script>
+  <script src="js/providers.js?v=11" defer></script>
   <script src="js/lakes.js?v=1" defer></script>
-  <script src="js/app.js?v=15" defer></script>
+  <script src="js/app.js?v=16" defer></script>
   <script src="js/analysis.js?v=8" defer></script>
 </body>
 </html>
