@@ -325,6 +325,17 @@ footer a { color: var(--accent); }
   max-width: 100%;
 }
 
+/* range slider: undo the text-input styling above */
+.analysis-controls input[type="range"] {
+  padding: 0;
+  border: none;
+  background: transparent;
+  accent-color: var(--accent);
+  min-height: 2.4rem;
+}
+
+#windrank-hours-val { font-weight: 700; color: var(--text); }
+
 .analysis-actions { flex-direction: row !important; gap: 0.5rem; }
 
 #analysis-run {

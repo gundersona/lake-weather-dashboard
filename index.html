@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
-  <link rel="stylesheet" href="css/styles.css?v=11">
+  <link rel="stylesheet" href="css/styles.css?v=12">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
@@ -254,6 +254,61 @@
         </div>
       </div>
     </section>
+    <section id="windrank-section" aria-label="Lake wind ranking">
+      <div class="card" id="windrank-card">
+        <h2>Lake wind ranking</h2>
+        <p class="card-sub">Rank lakes by how many days the hourly wind stayed in your range for enough hours — for example, find the lakes with the most days of steady 5–15 mph wind. Hourly data only. Uses the date range, months, temperature/area filters, and the 24hr/daylight toggle from Controls above.</p>
+        <div class="analysis-controls">
+          <div>
+            <label for="windrank-scope">Lakes</label>
+            <select id="windrank-scope">
+              <option value="state">Selected state</option>
+              <option value="all">All states (slow — downloads ~19&nbsp;MB)</option>
+            </select>
+          </div>
+          <div>
+            <div class="filter-row" style="margin-top:0">
+              <div>
+                <label for="windrank-wind-min">Min wind (mph)</label>
+                <input type="number" id="windrank-wind-min" step="any" placeholder="e.g. 5">
+              </div>
+              <div>
+                <label for="windrank-wind-max">Max wind (mph)</label>
+                <input type="number" id="windrank-wind-max" step="any" placeholder="e.g. 15">
+              </div>
+            </div>
+          </div>
+          <div>
+            <label for="windrank-hours">Hours per day in range: <output id="windrank-hours-val">≥ 12 h</output></label>
+            <input type="range" id="windrank-hours" min="1" max="24" step="1" value="12">
+          </div>
+          <div>
+            <label for="windrank-top">Show</label>
+            <select id="windrank-top">
+              <option value="10">Top 10</option>
+              <option value="25" selected>Top 25</option>
+              <option value="50">Top 50</option>
+              <option value="100">Top 100</option>
+            </select>
+          </div>
+          <div class="analysis-actions">
+            <button id="windrank-run" type="button">Rank lakes</button>
+            <button id="windrank-cancel" type="button" hidden>Cancel</button>
+          </div>
+        </div>
+        <div class="analysis-progress" id="windrank-progress" hidden>
+          <progress id="windrank-bar" max="100" value="0"></progress>
+          <span id="windrank-progress-text"></span>
+        </div>
+        <p id="windrank-status" class="empty-note" role="status" aria-live="polite"></p>
+        <div class="table-wrap" id="windrank-table-wrap" hidden>
+          <table id="windrank-table">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   </main>
 
   <footer>
@@ -261,11 +316,12 @@
   </footer>
 
   <script src="js/config.js?v=1" defer></script>
-  <script src="js/meteostat.js?v=5" defer></script>
+  <script src="js/meteostat.js?v=6" defer></script>
   <script src="js/daylight.js?v=1" defer></script>
   <script src="js/providers.js?v=11" defer></script>
   <script src="js/lakes.js?v=1" defer></script>
   <script src="js/app.js?v=16" defer></script>
   <script src="js/analysis.js?v=8" defer></script>
+  <script src="js/windrank.js?v=1" defer></script>
 </body>
 </html>

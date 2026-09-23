@@ -495,3 +495,26 @@ async function msFetchLakeDaily(lat, lon, start, end, signal) {
   const temp = rows.map((r) => (r.temp === null ? null : msR1(msCtoF(r.temp))));
   return { time: times, wind, temp };
 }
+
+/**
+ * Minimal hourly wind + temperature for the wind-day ranking. Returns
+ * { time, wind: [mph|null], temp: [F|null] } or null when unusable.
+ * Times are UTC ("YYYY-MM-DDTHH:00:00"), like the bulk files.
+ */
+async function msFetchLakeHourly(lat, lon, start, end, signal) {
+  const stations = await msNearby(lat, lon);
+  if (!stations.length) return null;
+  const years = msYears(start, end);
+  const data = await msLoadMany("hourly", stations, years, signal);
+  const times = msHourlyTimes(start, end);
+  const rows = msInterpolate(times, stations, (id) => data.get(id), [{ bulk: "temp" }, { bulk: "wspd" }]);
+  let anyWind = false;
+  const wind = rows.map((r) => {
+    const v = r.wspd === null ? null : msR1(msKmhToMph(r.wspd));
+    if (v !== null) anyWind = true;
+    return v;
+  });
+  if (!anyWind) return null;
+  const temp = rows.map((r) => (r.temp === null ? null : msR1(msCtoF(r.temp))));
+  return { time: times, wind, temp };
+}
