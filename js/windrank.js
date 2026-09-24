@@ -22,6 +22,8 @@ let windrankAborter = null;
 
 function initWindRank() {
   refreshWindRankScopeLabel();
+  refreshRankByRow();
+  $("provider").addEventListener("change", refreshRankByRow);
   $("windrank-run").addEventListener("click", runWindRank);
   $("windrank-cancel").addEventListener("click", () => {
     if (windrankAborter) windrankAborter.abort();
@@ -40,6 +42,11 @@ function refreshWindRankScopeLabel() {
   if (!opt) return;
   const st = STATES.find((s) => s.code === currentStateCode);
   opt.textContent = st ? `Selected state (${st.name})` : "Selected state";
+}
+
+/** Show the rank-by-provider picker only when both providers are compared. */
+function refreshRankByRow() {
+  $("windrank-rankby-row").hidden = $("provider").value !== "both";
 }
 
 function setWindRankStatus(msg, isError) {
@@ -379,11 +386,13 @@ async function runWindRank() {
     if (signal.aborted) return;
 
     // Most matching days first; ties broken by name for a stable table.
-    // Compare mode sorts by the Open-Meteo count, matching single-provider
-    // ("Days matching") semantics; the Δ column shows the Meteostat difference.
+    // Compare mode sorts by the selected provider's day count ("Days
+    // matching" semantics in single-provider mode); the Δ column shows the
+    // other provider's difference.
+    const rankByMs = isCompare && $("windrank-rankby").value === "meteostat";
     results.sort((a, b) => {
-      const ad = isCompare ? a.omDays : a.days;
-      const bd = isCompare ? b.omDays : b.days;
+      const ad = isCompare ? (rankByMs ? a.msDays : a.omDays) : a.days;
+      const bd = isCompare ? (rankByMs ? b.msDays : b.omDays) : b.days;
       return (bd - ad) || a.lake.name.localeCompare(b.lake.name);
     });
     renderWindRankTable(results.slice(0, topN), scope === "all", isCompare);
@@ -401,7 +410,7 @@ async function runWindRank() {
     setWindRankStatus(
       `Ranked ${results.length.toLocaleString()} lakes by matching days, ${start} to ${end}` +
       (isCompare
-        ? " (both providers; sorted by Open-Meteo days, Δ = Meteostat − Open-Meteo)"
+        ? ` (both providers; sorted by ${rankByMs ? "Meteostat" : "Open-Meteo"} days, Δ = Meteostat − Open-Meteo)`
         : ` (${provider === "meteostat" ? "Meteostat station interpolation" : "Open-Meteo archive"})`) +
       " — " + notes.join("; ") + ".");
   } catch (err) {

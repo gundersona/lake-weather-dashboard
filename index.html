@@ -62,18 +62,18 @@
         <fieldset id="month-filter">
           <legend>Months</legend>
           <div class="month-grid">
-            <label class="month-pill"><input type="checkbox" data-month="1" checked>Jan</label>
-            <label class="month-pill"><input type="checkbox" data-month="2" checked>Feb</label>
-            <label class="month-pill"><input type="checkbox" data-month="3" checked>Mar</label>
-            <label class="month-pill"><input type="checkbox" data-month="4" checked>Apr</label>
+            <label class="month-pill"><input type="checkbox" data-month="1">Jan</label>
+            <label class="month-pill"><input type="checkbox" data-month="2">Feb</label>
+            <label class="month-pill"><input type="checkbox" data-month="3">Mar</label>
+            <label class="month-pill"><input type="checkbox" data-month="4">Apr</label>
             <label class="month-pill"><input type="checkbox" data-month="5" checked>May</label>
             <label class="month-pill"><input type="checkbox" data-month="6" checked>Jun</label>
             <label class="month-pill"><input type="checkbox" data-month="7" checked>Jul</label>
             <label class="month-pill"><input type="checkbox" data-month="8" checked>Aug</label>
             <label class="month-pill"><input type="checkbox" data-month="9" checked>Sep</label>
             <label class="month-pill"><input type="checkbox" data-month="10" checked>Oct</label>
-            <label class="month-pill"><input type="checkbox" data-month="11" checked>Nov</label>
-            <label class="month-pill"><input type="checkbox" data-month="12" checked>Dec</label>
+            <label class="month-pill"><input type="checkbox" data-month="11">Nov</label>
+            <label class="month-pill"><input type="checkbox" data-month="12">Dec</label>
           </div>
           <div class="month-actions">
             <button type="button" id="months-all">All</button>
@@ -85,7 +85,7 @@
         <div class="filter-row">
           <div>
             <label for="filter-temp-min">Min temp (°F)</label>
-            <input type="number" id="filter-temp-min" step="any" placeholder="Any">
+            <input type="number" id="filter-temp-min" step="any" placeholder="Any" value="35">
           </div>
           <div>
             <label for="filter-temp-max">Max temp (°F)</label>
@@ -95,7 +95,7 @@
         <div class="filter-row">
           <div>
             <label for="filter-area-min">Min area (acres)</label>
-            <input type="number" id="filter-area-min" min="0" step="any" placeholder="Any">
+            <input type="number" id="filter-area-min" min="0" step="any" placeholder="Any" value="1000">
           </div>
           <div>
             <label for="filter-area-max">Max area (acres)</label>
@@ -106,14 +106,14 @@
 
         <label for="aggregation">Aggregation</label>
         <select id="aggregation">
-          <option value="hourly">Hourly (past 30 years)</option>
-          <option value="daily" selected>Daily (past 20 years)</option>
+          <option value="hourly" selected>Hourly (past 30 years)</option>
+          <option value="daily">Daily (past 20 years)</option>
           <option value="monthly">Monthly (past 50 years)</option>
         </select>
         <p class="empty-note">Humidity &amp; pressure need hourly. Monthly goes back 50 years.</p>
         <div id="daylight-row" hidden>
           <span class="daylight-end">24hr</span>
-          <label class="switch"><input type="checkbox" id="daylight-toggle"><span class="track" aria-hidden="true"></span><span class="vh">Daylight hours only</span></label>
+          <label class="switch"><input type="checkbox" id="daylight-toggle" checked><span class="track" aria-hidden="true"></span><span class="vh">Daylight hours only</span></label>
           <span class="daylight-end">Daylight</span>
         </div>
         <p class="empty-note" id="daylight-note" hidden>Daylight keeps only hours between sunrise and sunset, computed from the lake's latitude and longitude.</p>
@@ -270,17 +270,17 @@
             <div class="filter-row" style="margin-top:0">
               <div>
                 <label for="windrank-wind-min">Min wind (mph)</label>
-                <input type="number" id="windrank-wind-min" step="any" placeholder="e.g. 5">
+                <input type="number" id="windrank-wind-min" step="any" placeholder="e.g. 5" value="0">
               </div>
               <div>
                 <label for="windrank-wind-max">Max wind (mph)</label>
-                <input type="number" id="windrank-wind-max" step="any" placeholder="e.g. 15">
+                <input type="number" id="windrank-wind-max" step="any" placeholder="e.g. 15" value="5">
               </div>
             </div>
           </div>
           <div>
-            <label for="windrank-hours">Hours per day in range: <output id="windrank-hours-val">≥ 12 h</output></label>
-            <input type="range" id="windrank-hours" min="1" max="24" step="1" value="12">
+            <label for="windrank-hours">Hours per day in range: <output id="windrank-hours-val">≥ 4 h</output></label>
+            <input type="range" id="windrank-hours" min="1" max="12" step="1" value="4">
           </div>
           <div>
             <label for="windrank-top">Show</label>
@@ -289,6 +289,13 @@
               <option value="25" selected>Top 25</option>
               <option value="50">Top 50</option>
               <option value="100">Top 100</option>
+            </select>
+          </div>
+          <div id="windrank-rankby-row" hidden>
+            <label for="windrank-rankby">Rank by</label>
+            <select id="windrank-rankby">
+              <option value="open-meteo" selected>Open-Meteo days</option>
+              <option value="meteostat">Meteostat days</option>
             </select>
           </div>
           <div class="analysis-actions">
@@ -322,6 +329,6 @@
   <script src="js/lakes.js?v=1" defer></script>
   <script src="js/app.js?v=16" defer></script>
   <script src="js/analysis.js?v=8" defer></script>
-  <script src="js/windrank.js?v=2" defer></script>
+  <script src="js/windrank.js?v=3" defer></script>
 </body>
 </html>
