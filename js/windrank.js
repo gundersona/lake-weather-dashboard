@@ -463,6 +463,7 @@ function renderWindRankTable(rows, showState, isCompare = false) {
     btn.addEventListener("click", () => loadAnalysisLake(r.lake));
     btnCell.appendChild(btn);
     tr.appendChild(btnCell);
+    tbody.appendChild(tr);
   });
 }
 
