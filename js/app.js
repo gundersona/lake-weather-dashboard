@@ -554,6 +554,13 @@ async function onLoad() {
           ? { onProgress: (done, total) => setProviderProgress("meteostat", done, total, `Station data ${done}/${total}`) }
           : undefined);
       setProviderDone(provider);
+      // Meteostat-only hourly may have pulled the start back to its 30-year
+      // reach (see providers.js). Capture it before the filters below, which
+      // may return new data objects.
+      const effStart = data.start || start;
+      const rangeNote = data.clampedStart
+        ? ` Start pulled back to ${effStart} — hourly data only goes back 30 years.`
+        : "";
       if (!data.time.length) throw new Error("No data returned for this date range.");
       data = applyDaylight(data, lake);
       if (!data.time.length) {
@@ -567,15 +574,15 @@ async function onLoad() {
       renderStatCards(fdata, vars);
       showChartMode("single");
       renderLineChart(buckets, vars, aggregation);
-      buildTable(buckets, vars, { lake, start, end, aggregation });
+      buildTable(buckets, vars, { lake, start: effStart, end, aggregation });
       renderWindRose(fdata, provider);
       if (provider === "meteostat") renderStationTable(data.stations, lake);
       else $("station-card").hidden = true;
 
       $("visuals").hidden = false;
 
-      let msg = `Loaded ${buckets.length} ${aggregation} period${buckets.length === 1 ? "" : "s"} for ${lake.name} (${start} to ${end}).` +
-        describeActiveFilters();
+      let msg = `Loaded ${buckets.length} ${aggregation} period${buckets.length === 1 ? "" : "s"} for ${lake.name} (${effStart} to ${end}).` +
+        describeActiveFilters() + rangeNote;
       if (skipped.length) {
         const reason = provider === "meteostat" ? "(not reported by month)" : "(hourly aggregation only)";
         msg += ` Skipped ${skipped.map((v) => v.label).join(", ")} ${reason}.`;
@@ -670,6 +677,7 @@ async function loadCompare(opts) {
     describeActiveFilters();
   if (omEnd < end) msg += ` Open-Meteo data ends ${omEnd}.`;
   if (msEnd < end) msg += ` Meteostat data ends ${msEnd}.`;
+  if (msRaw && msRaw.clampedStart) msg += ` Meteostat start pulled back to ${msRaw.start} — hourly data only goes back 30 years.`;
   if (omErr) msg += ` Open-Meteo failed: ${omErr.message}`;
   if (msErr) msg += ` Meteostat failed: ${msErr.message}`;
   // Name the known per-provider gaps so "—" cells aren't a mystery.

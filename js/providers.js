@@ -192,6 +192,15 @@ async function fetchMeteostat(lat, lon, start, end, params, aggregation = "hourl
   if (aggregation === "monthly" && start < yearsAgoISO(MONTHLY_MAX_YEARS)) {
     throw new Error(`Monthly data is available for the past ${MONTHLY_MAX_YEARS} years only.`);
   }
+  // Hourly mirrors the wind-ranking section: pull the start back to the
+  // 30-year hourly reach instead of failing. The adjustment rides back on
+  // the result (clampedStart = what was asked for, start = what ran) so the
+  // caller can note it in the status line.
+  let clampedStart = null;
+  if (aggregation === "hourly" && start < yearsAgoISO(HOURLY_MAX_YEARS)) {
+    clampedStart = start;
+    start = yearsAgoISO(HOURLY_MAX_YEARS);
+  }
   // Monthly wind direction would need the hourly bulk for all years (wind
   // direction isn't in the daily files) — cost-prohibitive, so it's skipped
   // and the UI says so. Wind speed and gust come from the daily bulk files
@@ -207,6 +216,10 @@ async function fetchMeteostat(lat, lon, start, end, params, aggregation = "hourl
     undefined, options.onProgress);
   // In hourly mode wind_speed_10m_max isn't set (no true maxima).
   if (aggregation === "hourly") delete data.values["wind_speed_10m_max"];
+  if (clampedStart) {
+    data.clampedStart = clampedStart; // what was asked for
+    data.start = start;               // what actually ran
+  }
   return data;
 }
 
