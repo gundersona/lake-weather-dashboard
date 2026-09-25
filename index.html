@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
-  <link rel="stylesheet" href="css/styles.css?v=12">
+  <link rel="stylesheet" href="css/styles.css?v=13">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
@@ -102,7 +102,7 @@
             <input type="number" id="filter-area-max" min="0" step="any" placeholder="Any">
           </div>
         </div>
-        <p class="empty-note">Months, temperature, and area filters apply to both weather loading and lake analysis. Temperature keeps whole days whose daily mean is in range.</p>
+        <p class="empty-note">Months, temperature, and area filters apply to both weather loading and lake ranking. Temperature keeps whole days whose daily mean is in range.</p>
 
         <label for="aggregation">Aggregation</label>
         <select id="aggregation">
@@ -208,56 +208,10 @@
       </div>
     </section>
 
-    <section id="analysis-section" aria-label="Lake analysis">
-      <div class="card" id="analysis-card">
-        <h2>Lake analysis</h2>
-        <p class="card-sub">Rank lakes by average wind speed — for example, find the calmest lakes in a state. Uses the date range, months, and temperature/area filters from Controls above. Wind data is fetched for every lake in batches, so this fits long, monthly-style periods.</p>
-        <div class="analysis-controls">
-          <div>
-            <label for="analysis-scope">Lakes</label>
-            <select id="analysis-scope">
-              <option value="state">Selected state</option>
-              <option value="all">All states (slow — downloads ~19&nbsp;MB)</option>
-            </select>
-          </div>
-          <div>
-            <label for="analysis-dir">Order</label>
-            <select id="analysis-dir">
-              <option value="asc">Calmest first</option>
-              <option value="desc">Windiest first</option>
-            </select>
-          </div>
-          <div>
-            <label for="analysis-top">Show</label>
-            <select id="analysis-top">
-              <option value="10">Top 10</option>
-              <option value="25" selected>Top 25</option>
-              <option value="50">Top 50</option>
-              <option value="100">Top 100</option>
-            </select>
-          </div>
-          <div class="analysis-actions">
-            <button id="analysis-run" type="button">Rank lakes</button>
-            <button id="analysis-cancel" type="button" hidden>Cancel</button>
-          </div>
-        </div>
-        <div class="analysis-progress" id="analysis-progress" hidden>
-          <progress id="analysis-bar" max="100" value="0"></progress>
-          <span id="analysis-progress-text"></span>
-        </div>
-        <p id="analysis-status" class="empty-note" role="status" aria-live="polite"></p>
-        <div class="table-wrap" id="analysis-table-wrap" hidden>
-          <table id="analysis-table">
-            <thead></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
     <section id="windrank-section" aria-label="Lake wind ranking">
       <div class="card" id="windrank-card">
         <h2>Lake wind ranking</h2>
-        <p class="card-sub">Rank lakes by how many days the hourly wind stayed in your range for enough hours — for example, find the lakes with the most days of steady 5–15 mph wind. Hourly data only. Uses the date range, months, temperature/area filters, and the 24hr/daylight toggle from Controls above.</p>
+        <p class="card-sub">Rank lakes by average wind speed or by how many days the hourly wind stayed in your range for enough hours — for example, find the calmest lakes, or the lakes with the most days of steady 0–5 mph wind. Hourly data only. Uses the date range, months, temperature/area filters, and the 24hr/daylight toggle from Controls above.</p>
         <div class="analysis-controls">
           <div>
             <label for="windrank-scope">Lakes</label>
@@ -267,6 +221,13 @@
             </select>
           </div>
           <div>
+            <label for="windrank-criteria">Rank by</label>
+            <select id="windrank-criteria">
+              <option value="days" selected>Days in wind range</option>
+              <option value="avg">Average wind speed</option>
+            </select>
+          </div>
+          <div class="windrank-days-only">
             <div class="filter-row" style="margin-top:0">
               <div>
                 <label for="windrank-wind-min">Min wind (mph)</label>
@@ -278,9 +239,16 @@
               </div>
             </div>
           </div>
-          <div>
+          <div class="windrank-days-only">
             <label for="windrank-hours">Hours per day in range: <output id="windrank-hours-val">≥ 4 h</output></label>
             <input type="range" id="windrank-hours" min="1" max="12" step="1" value="4">
+          </div>
+          <div class="windrank-avg-only" hidden>
+            <label for="windrank-avgdir">Order</label>
+            <select id="windrank-avgdir">
+              <option value="asc" selected>Calmest first</option>
+              <option value="desc">Windiest first</option>
+            </select>
           </div>
           <div>
             <label for="windrank-top">Show</label>
@@ -292,7 +260,7 @@
             </select>
           </div>
           <div id="windrank-rankby-row" hidden>
-            <label for="windrank-rankby">Rank by</label>
+            <label for="windrank-rankby">Sort by</label>
             <select id="windrank-rankby">
               <option value="open-meteo" selected>Open-Meteo days</option>
               <option value="meteostat">Meteostat days</option>
@@ -327,8 +295,7 @@
   <script src="js/daylight.js?v=1" defer></script>
   <script src="js/providers.js?v=12" defer></script>
   <script src="js/lakes.js?v=1" defer></script>
-  <script src="js/app.js?v=17" defer></script>
-  <script src="js/analysis.js?v=8" defer></script>
-  <script src="js/windrank.js?v=3" defer></script>
+  <script src="js/app.js?v=18" defer></script>
+  <script src="js/windrank.js?v=4" defer></script>
 </body>
 </html>

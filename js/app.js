@@ -310,7 +310,7 @@ function maybeProviderNotice() {
 
 // ---------------------------------------------------------------- shared filters
 // The month / temperature / area filters live in Controls and apply to both
-// weather loading and lake analysis.
+// weather loading and lake ranking.
 
 /** Months (1–12) currently selected in the Months filter. */
 function getActiveMonths() {
