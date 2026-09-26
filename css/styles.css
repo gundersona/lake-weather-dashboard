@@ -303,6 +303,10 @@ footer a { color: var(--accent); }
 
 .card-sub { color: var(--muted); font-size: 0.92rem; margin: 0 0 1rem; }
 
+/* Wind ranking now lives inside the Controls card; its heading matches the
+   card's own h2 rhythm at a smaller size. */
+#windrank-box h3 { font-size: 1.05rem; margin: 1.25rem 0 0.5rem; }
+
 .analysis-controls {
   display: flex;
   flex-wrap: wrap;

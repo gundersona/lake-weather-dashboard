@@ -47,16 +47,20 @@ async function loadRankedLake(lake) {
   // Markers are keyed by the lake objects from the fresh load — look it up
   // so the map highlight and popup work.
   const live = currentLakes.find((l) => l.id === lake.id) || lake;
-  selectLake(live, { zoom: true });
-  document.getElementById("map").scrollIntoView({ behavior: "smooth", block: "center" });
+  // The map is hidden in ranking mode, so skip the zoom and point at the
+  // next step instead: Load weather fills the graphs and data table below.
+  selectLake(live, { zoom: false });
+  document.getElementById("load-btn").scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 function initWindRank() {
   refreshWindRankScopeLabel();
   refreshRankByRow();
   refreshCriteriaUI();
+  refreshSearchMode();
   $("provider").addEventListener("change", refreshRankByRow);
   $("windrank-criteria").addEventListener("change", refreshCriteriaUI);
+  $("search-mode").addEventListener("change", refreshSearchMode);
   $("windrank-run").addEventListener("click", runWindRank);
   $("windrank-cancel").addEventListener("click", () => {
     if (windrankAborter) windrankAborter.abort();
@@ -80,6 +84,18 @@ function refreshWindRankScopeLabel() {
 /** Show the rank-by-provider picker only when both providers are compared. */
 function refreshRankByRow() {
   $("windrank-rankby-row").hidden = $("provider").value !== "both";
+}
+
+/**
+ * Swap the lake-selection UI between manual selection (lake search + map)
+ * and wind ranking, per the "Search lakes by" dropdown. When the map becomes
+ * visible again it needs a size re-sync after being hidden.
+ */
+function refreshSearchMode() {
+  const isRank = $("search-mode").value === "windrank";
+  $("manual-box").hidden = isRank;
+  $("windrank-box").hidden = !isRank;
+  if (!isRank && typeof refreshMapSize === "function") refreshMapSize();
 }
 
 /**
