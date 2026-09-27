@@ -258,11 +258,6 @@ function showLakesOnMap(lakes) {
 }
 
 /** Highlight the selected lake's dot and pop it up; zoom only when asked. */
-/** Re-sync the Leaflet map after its container was hidden and shown again. */
-function refreshMapSize() {
-  if (map) map.invalidateSize();
-}
-
 function highlightLake(lake, { zoom } = {}) {
   if (!map) return;
   if (selectedDot) { selectedDot.setIcon(lakeDotIcon()); selectedDot = null; }

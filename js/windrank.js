@@ -47,9 +47,10 @@ async function loadRankedLake(lake) {
   // Markers are keyed by the lake objects from the fresh load — look it up
   // so the map highlight and popup work.
   const live = currentLakes.find((l) => l.id === lake.id) || lake;
-  // The map is hidden in ranking mode, so skip the zoom and point at the
-  // next step instead: Load weather fills the graphs and data table below.
-  selectLake(live, { zoom: false });
+  // The map stays visible in ranking mode — zoom to the picked lake like the
+  // manual flow does, then point at the next step: Load weather fills the
+  // graphs and data table below.
+  selectLake(live, { zoom: true });
   refreshWindRankSelected();
   document.getElementById("load-btn").scrollIntoView({ behavior: "smooth", block: "center" });
 }
@@ -119,7 +120,6 @@ function refreshSearchMode() {
   $("manual-box").hidden = isRank;
   $("windrank-box").hidden = !isRank;
   refreshWindRankSelected();
-  if (!isRank && typeof refreshMapSize === "function") refreshMapSize();
 }
 
 /**
