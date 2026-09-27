@@ -50,7 +50,30 @@ async function loadRankedLake(lake) {
   // The map is hidden in ranking mode, so skip the zoom and point at the
   // next step instead: Load weather fills the graphs and data table below.
   selectLake(live, { zoom: false });
+  refreshWindRankSelected();
   document.getElementById("load-btn").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+/**
+ * Mirror the selected lake into the ranking panel. The manual panel's
+ * selected-lake line is hidden in ranking mode, so without this the Load
+ * buttons give no visible confirmation of what was picked.
+ */
+function refreshWindRankSelected() {
+  const el = $("windrank-selected");
+  if (!el) return;
+  const lake = typeof getSelectedLake === "function" ? getSelectedLake() : null;
+  el.innerHTML = "";
+  if (!lake) {
+    el.textContent = "No lake selected.";
+    return;
+  }
+  const strong = document.createElement("strong");
+  strong.textContent = lake.name;
+  el.appendChild(strong);
+  el.appendChild(document.createTextNode(
+    ` — ${lake.county || "unknown county"}, ${lake.state} (${lake.lat.toFixed(3)}, ${lake.lon.toFixed(3)})`
+  ));
 }
 
 function initWindRank() {
@@ -95,6 +118,7 @@ function refreshSearchMode() {
   const isRank = $("search-mode").value === "windrank";
   $("manual-box").hidden = isRank;
   $("windrank-box").hidden = !isRank;
+  refreshWindRankSelected();
   if (!isRank && typeof refreshMapSize === "function") refreshMapSize();
 }
 
@@ -250,6 +274,7 @@ function windrankLakeAvg(lake, s, months, tempRange, tempActive, useDaylight) {
 async function runWindRank() {
   if (windrankRunning) return;
   refreshWindRankScopeLabel();
+  refreshWindRankSelected();
   $("windrank-table-wrap").hidden = true;
 
   const criteria = $("windrank-criteria").value; // "days" | "avg"
