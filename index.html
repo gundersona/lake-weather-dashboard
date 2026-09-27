@@ -56,9 +56,79 @@
         </div>
         </div>
 
+        <div class="date-row">
+          <div>
+            <label for="start-date">From</label>
+            <input type="date" id="start-date">
+          </div>
+          <div>
+            <label for="end-date">To</label>
+            <input type="date" id="end-date">
+          </div>
+        </div>
+
+        <fieldset id="month-filter">
+          <legend>Months</legend>
+          <div class="month-grid">
+            <label class="month-pill"><input type="checkbox" data-month="1">Jan</label>
+            <label class="month-pill"><input type="checkbox" data-month="2">Feb</label>
+            <label class="month-pill"><input type="checkbox" data-month="3">Mar</label>
+            <label class="month-pill"><input type="checkbox" data-month="4">Apr</label>
+            <label class="month-pill"><input type="checkbox" data-month="5" checked>May</label>
+            <label class="month-pill"><input type="checkbox" data-month="6" checked>Jun</label>
+            <label class="month-pill"><input type="checkbox" data-month="7" checked>Jul</label>
+            <label class="month-pill"><input type="checkbox" data-month="8" checked>Aug</label>
+            <label class="month-pill"><input type="checkbox" data-month="9" checked>Sep</label>
+            <label class="month-pill"><input type="checkbox" data-month="10" checked>Oct</label>
+            <label class="month-pill"><input type="checkbox" data-month="11">Nov</label>
+            <label class="month-pill"><input type="checkbox" data-month="12">Dec</label>
+          </div>
+          <div class="month-actions">
+            <button type="button" id="months-all">All</button>
+            <span aria-hidden="true">·</span>
+            <button type="button" id="months-none">None</button>
+          </div>
+        </fieldset>
+
+        <div class="filter-row">
+          <div>
+            <label for="filter-temp-min">Min temp (°F)</label>
+            <input type="number" id="filter-temp-min" step="any" placeholder="Any" value="35">
+          </div>
+          <div>
+            <label for="filter-temp-max">Max temp (°F)</label>
+            <input type="number" id="filter-temp-max" step="any" placeholder="Any">
+          </div>
+        </div>
+        <div class="filter-row">
+          <div>
+            <label for="filter-area-min">Min area (acres)</label>
+            <input type="number" id="filter-area-min" min="0" step="any" placeholder="Any" value="1000">
+          </div>
+          <div>
+            <label for="filter-area-max">Max area (acres)</label>
+            <input type="number" id="filter-area-max" min="0" step="any" placeholder="Any">
+          </div>
+        </div>
+        <p class="empty-note">Months, temperature, and area filters apply to both weather loading and lake ranking. Temperature keeps whole days whose daily mean is in range.</p>
+
+        <label for="aggregation">Aggregation</label>
+        <select id="aggregation">
+          <option value="hourly" selected>Hourly (past 30 years)</option>
+          <option value="daily">Daily (past 20 years)</option>
+          <option value="monthly">Monthly (past 50 years)</option>
+        </select>
+        <p class="empty-note">Humidity &amp; pressure need hourly. Monthly goes back 50 years.</p>
+        <div id="daylight-row" hidden>
+          <span class="daylight-end">24hr</span>
+          <label class="switch"><input type="checkbox" id="daylight-toggle" checked><span class="track" aria-hidden="true"></span><span class="vh">Daylight hours only</span></label>
+          <span class="daylight-end">Daylight</span>
+        </div>
+        <p class="empty-note" id="daylight-note" hidden>Daylight keeps only hours between sunrise and sunset, computed from the lake's latitude and longitude.</p>
+
         <div id="windrank-box" hidden>
           <h3>Lake wind ranking</h3>
-          <p class="card-sub">Rank lakes by average wind speed or by how many days the hourly wind stayed in your range for enough hours — for example, find the calmest lakes, or the lakes with the most days of steady 0–5 mph wind. Hourly data only. Uses the date range, months, temperature/area filters, and the 24hr/daylight toggle from Controls below. Loading a ranked lake fills the weather graphs and data table further down the page.</p>
+          <p class="card-sub">Rank lakes by average wind speed or by how many days the hourly wind stayed in your range for enough hours — for example, find the calmest lakes, or the lakes with the most days of steady 0–5 mph wind. Hourly data only. Uses the date range, months, temperature/area filters, and the 24hr/daylight toggle from Controls above. Loading a ranked lake fills the weather graphs and data table further down the page.</p>
           <div class="analysis-controls">
             <div>
               <label for="windrank-scope">Lakes</label>
@@ -132,75 +202,6 @@
 
         </div>
 
-        <div class="date-row">
-          <div>
-            <label for="start-date">From</label>
-            <input type="date" id="start-date">
-          </div>
-          <div>
-            <label for="end-date">To</label>
-            <input type="date" id="end-date">
-          </div>
-        </div>
-
-        <fieldset id="month-filter">
-          <legend>Months</legend>
-          <div class="month-grid">
-            <label class="month-pill"><input type="checkbox" data-month="1">Jan</label>
-            <label class="month-pill"><input type="checkbox" data-month="2">Feb</label>
-            <label class="month-pill"><input type="checkbox" data-month="3">Mar</label>
-            <label class="month-pill"><input type="checkbox" data-month="4">Apr</label>
-            <label class="month-pill"><input type="checkbox" data-month="5" checked>May</label>
-            <label class="month-pill"><input type="checkbox" data-month="6" checked>Jun</label>
-            <label class="month-pill"><input type="checkbox" data-month="7" checked>Jul</label>
-            <label class="month-pill"><input type="checkbox" data-month="8" checked>Aug</label>
-            <label class="month-pill"><input type="checkbox" data-month="9" checked>Sep</label>
-            <label class="month-pill"><input type="checkbox" data-month="10" checked>Oct</label>
-            <label class="month-pill"><input type="checkbox" data-month="11">Nov</label>
-            <label class="month-pill"><input type="checkbox" data-month="12">Dec</label>
-          </div>
-          <div class="month-actions">
-            <button type="button" id="months-all">All</button>
-            <span aria-hidden="true">·</span>
-            <button type="button" id="months-none">None</button>
-          </div>
-        </fieldset>
-
-        <div class="filter-row">
-          <div>
-            <label for="filter-temp-min">Min temp (°F)</label>
-            <input type="number" id="filter-temp-min" step="any" placeholder="Any" value="35">
-          </div>
-          <div>
-            <label for="filter-temp-max">Max temp (°F)</label>
-            <input type="number" id="filter-temp-max" step="any" placeholder="Any">
-          </div>
-        </div>
-        <div class="filter-row">
-          <div>
-            <label for="filter-area-min">Min area (acres)</label>
-            <input type="number" id="filter-area-min" min="0" step="any" placeholder="Any" value="1000">
-          </div>
-          <div>
-            <label for="filter-area-max">Max area (acres)</label>
-            <input type="number" id="filter-area-max" min="0" step="any" placeholder="Any">
-          </div>
-        </div>
-        <p class="empty-note">Months, temperature, and area filters apply to both weather loading and lake ranking. Temperature keeps whole days whose daily mean is in range.</p>
-
-        <label for="aggregation">Aggregation</label>
-        <select id="aggregation">
-          <option value="hourly" selected>Hourly (past 30 years)</option>
-          <option value="daily">Daily (past 20 years)</option>
-          <option value="monthly">Monthly (past 50 years)</option>
-        </select>
-        <p class="empty-note">Humidity &amp; pressure need hourly. Monthly goes back 50 years.</p>
-        <div id="daylight-row" hidden>
-          <span class="daylight-end">24hr</span>
-          <label class="switch"><input type="checkbox" id="daylight-toggle" checked><span class="track" aria-hidden="true"></span><span class="vh">Daylight hours only</span></label>
-          <span class="daylight-end">Daylight</span>
-        </div>
-        <p class="empty-note" id="daylight-note" hidden>Daylight keeps only hours between sunrise and sunset, computed from the lake's latitude and longitude.</p>
 
         <fieldset>
           <legend>Variables</legend>
