@@ -276,6 +276,13 @@
         <p class="chart-note" id="wind-rose-note">Each wedge points in the compass direction the wind <em>comes from</em>; its length is the average wind speed from that direction over the selected period (longer = stronger). Rings are labeled in mph. The red arrow points at the compass direction the prevailing wind comes from.</p>
       </div>
 
+      <div class="card">
+        <h2>Wind histogram</h2>
+        <canvas id="wind-histogram" aria-label="Histogram of daily average wind speed"></canvas>
+        <p class="empty-note" id="wind-histogram-empty" hidden></p>
+        <p class="chart-note" id="wind-histogram-note"></p>
+      </div>
+
       <div class="card table-card">
         <h2>Data</h2>
         <p class="chart-note" id="data-table-note" hidden>Values shown as Open-Meteo / Meteostat.</p>
@@ -306,7 +313,7 @@
   <script src="js/daylight.js?v=1" defer></script>
   <script src="js/providers.js?v=12" defer></script>
   <script src="js/lakes.js?v=1" defer></script>
-  <script src="js/app.js?v=20" defer></script>
+  <script src="js/app.js?v=21" defer></script>
   <script src="js/windrank.js?v=7" defer></script>
 </body>
 </html>

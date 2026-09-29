@@ -576,6 +576,9 @@ async function onLoad() {
       renderLineChart(buckets, vars, aggregation);
       buildTable(buckets, vars, { lake, start: effStart, end, aggregation });
       renderWindRose(fdata, provider);
+      renderWindHistogram(
+        [{ key: provider, name: provider === "open-meteo" ? "Open-Meteo" : "Meteostat", fdata }],
+        aggregation);
       if (provider === "meteostat") renderStationTable(data.stations, lake);
       else $("station-card").hidden = true;
 
@@ -668,6 +671,10 @@ async function loadCompare(opts) {
   renderCompareCharts(merged, vars, aggregation);
   buildCompareTable(merged, vars, { lake, start, end, aggregation });
   renderWindRoseCompare(omFiltered, msFiltered, vars);
+  renderWindHistogram([
+    { key: "open-meteo", name: "Open-Meteo", fdata: omFiltered },
+    { key: "meteostat", name: "Meteostat", fdata: msFiltered },
+  ], aggregation);
   renderStationTable(msRaw && msRaw.stations, lake);
 
   $("visuals").hidden = false;
@@ -1550,4 +1557,174 @@ function renderWindRoseCompare(omData, msData, vars) {
           "so expect a coarser picture than hourly mode.") +
       " Left: Open-Meteo (historic forecast data). Right: Meteostat (station data).";
   }
+}
+
+// ------------------------------------------------------- wind histogram
+
+const WIND_HIST_BIN = 2.5; // mph
+const WIND_HIST_COLORS = { "open-meteo": "#1a7fbf", "meteostat": "#f39c12" };
+let windHistChart = null;
+
+function windHistBinLabel(lo) {
+  const f = (x) => (Number.isInteger(x) ? String(x) : x.toFixed(1));
+  return `${f(lo)}–${f(lo + WIND_HIST_BIN)}`;
+}
+
+/**
+ * One daily mean wind (mph) per qualifying day in a filtered hourly dataset.
+ * The dataset already carries the shared filters (daylight hours, months,
+ * whole-day temperature); under the "days in wind range" ranking criterion a
+ * day additionally needs hourThreshold of its hours inside [wmin, wmax] —
+ * the same rule the ranking tallies by. Days group on the UTC date, like the
+ * ranking. Hours with no wind data are skipped; days with none are dropped.
+ */
+function windHistDailyMeans(fdata, wmin, wmax, hourThreshold, useHours) {
+  const speeds = fdata.values["wind_speed_10m"];
+  const byDay = new Map();
+  fdata.time.forEach((t, i) => {
+    const dk = t.slice(0, 10);
+    let arr = byDay.get(dk);
+    if (!arr) { arr = []; byDay.set(dk, arr); }
+    arr.push(speeds[i]);
+  });
+  const means = [];
+  for (const arr of byDay.values()) {
+    let qual = 0, sum = 0, n = 0;
+    for (const w of arr) {
+      if (w === null || w === undefined || Number.isNaN(w)) continue;
+      sum += w; n++;
+      if (w >= wmin && w <= wmax) qual++;
+    }
+    if (!n) continue;
+    if (useHours && qual < hourThreshold) continue;
+    means.push(sum / n);
+  }
+  return means;
+}
+
+/** Note under the histogram: what the bars count and which filters applied. */
+function windHistNote(isDays, wmin, wmax, hourThreshold) {
+  const rules = [];
+  if (daylightOnly()) rules.push("daylight hours");
+  if (getActiveMonths().length < 12) rules.push("the month selection");
+  const t = getTempRange();
+  if (t.min !== null || t.max !== null) rules.push("the temperature filter");
+  if (isDays) rules.push(`≥${hourThreshold} h with wind ${wmin}–${wmax} mph`);
+  let s = "Each bar counts days whose daily average wind (mean of the retained hourly values) " +
+    "falls in that 2.5 mph bin.";
+  s += rules.length
+    ? ` Only days passing every active filter are counted: ${rules.join("; ")}.`
+    : " Every day in the range is counted.";
+  return s;
+}
+
+/** Hide the histogram canvas and show a one-line placeholder instead. */
+function windHistPlaceholder(msg, note) {
+  if (windHistChart) { windHistChart.destroy(); windHistChart = null; }
+  $("wind-histogram").hidden = true;
+  const emptyEl = $("wind-histogram-empty");
+  emptyEl.hidden = false;
+  emptyEl.textContent = msg;
+  $("wind-histogram-note").textContent = note || "";
+}
+
+/**
+ * Wind histogram for one or two providers' filtered hourly datasets:
+ * X = 2.5 mph bins of daily average wind, Y = day count. Counts honor every
+ * filter the ranking does (daylight, months, temperature, plus the
+ * hours-in-wind-range rule under the "days" criterion). Hourly aggregation
+ * only — other modes don't keep the hourly values the day counts need.
+ */
+function renderWindHistogram(series, aggregation) {
+  // series: [{ key: "open-meteo"|"meteostat", name, fdata }]
+  if (typeof Chart === "undefined") {
+    windHistPlaceholder("Charts failed to load.", "");
+    return;
+  }
+  if (aggregation !== "hourly") {
+    windHistPlaceholder(
+      "The wind histogram needs hourly aggregation.",
+      "Daily and monthly modes don't keep the hourly values the day counts are built from.");
+    return;
+  }
+  const withWind = series.filter((s) => s.fdata && s.fdata.values["wind_speed_10m"]);
+  if (!withWind.length) {
+    windHistPlaceholder(
+      "Select wind speed to see the histogram.",
+      "The histogram bins each day by its average wind speed.");
+    return;
+  }
+  const isDays = $("windrank-criteria").value !== "avg";
+  let wmin = -Infinity, wmax = Infinity, hourThreshold = 0;
+  if (isDays) {
+    wmin = parseFloat($("windrank-wind-min").value);
+    wmax = parseFloat($("windrank-wind-max").value);
+    if (!Number.isFinite(wmin) || !Number.isFinite(wmax) || wmin > wmax) {
+      windHistPlaceholder(
+        "Enter a wind range (min and max, mph) to build the histogram.",
+        "The day counts follow the wind ranking's hours-in-range rule.");
+      return;
+    }
+    hourThreshold = parseInt($("windrank-hours").value, 10) || 4;
+  }
+  const perProvider = withWind.map((s) => ({
+    ...s,
+    means: windHistDailyMeans(s.fdata, wmin, wmax, hourThreshold, isDays),
+  }));
+  const totalDays = perProvider.reduce((t, s) => t + s.means.length, 0);
+  const note = windHistNote(isDays, wmin, wmax, hourThreshold);
+  if (!totalDays) {
+    windHistPlaceholder("No days match the filters.", note);
+    return;
+  }
+
+  const maxMean = Math.max(...perProvider.flatMap((s) => s.means));
+  const binCount = Math.floor(maxMean / WIND_HIST_BIN) + 1;
+  const labels = Array.from({ length: binCount }, (_, b) => windHistBinLabel(b * WIND_HIST_BIN));
+  const datasets = perProvider.map((s) => {
+    const counts = new Array(binCount).fill(0);
+    for (const m of s.means) {
+      counts[Math.min(Math.floor(m / WIND_HIST_BIN), binCount - 1)]++;
+    }
+    const color = WIND_HIST_COLORS[s.key] || "#1a7fbf";
+    return {
+      label: s.name,
+      data: counts,
+      backgroundColor: color,
+      borderColor: color,
+      borderWidth: 1,
+    };
+  });
+
+  if (windHistChart) { windHistChart.destroy(); windHistChart = null; }
+  $("wind-histogram").hidden = false;
+  $("wind-histogram-empty").hidden = true;
+  windHistChart = new Chart($("wind-histogram"), {
+    type: "bar",
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      aspectRatio: chartAspectRatio(),
+      plugins: {
+        legend: { display: datasets.length > 1, position: "top" },
+        title: { display: true, text: "Days by daily average wind speed" },
+        tooltip: {
+          callbacks: {
+            title: (items) => `${items[0].label} mph`,
+            label: (item) =>
+              ` ${item.dataset.label}: ${item.parsed.y} day${item.parsed.y === 1 ? "" : "s"}`,
+          },
+        },
+      },
+      scales: {
+        x: { title: { display: true, text: "Daily average wind (mph)" } },
+        y: {
+          title: { display: true, text: "Days" },
+          beginAtZero: true,
+          ticks: { precision: 0 },
+        },
+      },
+    },
+  });
+  $("wind-histogram-note").textContent = note;
 }
