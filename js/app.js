@@ -1571,14 +1571,14 @@ function windHistBinLabel(lo) {
 }
 
 /**
- * One daily mean wind (mph) per qualifying day in a filtered hourly dataset.
+ * One daily mean wind (mph) per day in a filtered hourly dataset.
  * The dataset already carries the shared filters (daylight hours, months,
- * whole-day temperature); under the "days in wind range" ranking criterion a
- * day additionally needs hourThreshold of its hours inside [wmin, wmax] —
- * the same rule the ranking tallies by. Days group on the UTC date, like the
- * ranking. Hours with no wind data are skipped; days with none are dropped.
+ * whole-day temperature). The wind ranking's hours-in-wind-range rule does
+ * NOT apply here — it belongs to the wind ranking only. Days group on the
+ * UTC date, like the ranking. Hours with no wind data are skipped; days
+ * with none are dropped.
  */
-function windHistDailyMeans(fdata, wmin, wmax, hourThreshold, useHours) {
+function windHistDailyMeans(fdata) {
   const speeds = fdata.values["wind_speed_10m"];
   const byDay = new Map();
   fdata.time.forEach((t, i) => {
@@ -1589,27 +1589,24 @@ function windHistDailyMeans(fdata, wmin, wmax, hourThreshold, useHours) {
   });
   const means = [];
   for (const arr of byDay.values()) {
-    let qual = 0, sum = 0, n = 0;
+    let sum = 0, n = 0;
     for (const w of arr) {
       if (w === null || w === undefined || Number.isNaN(w)) continue;
       sum += w; n++;
-      if (w >= wmin && w <= wmax) qual++;
     }
     if (!n) continue;
-    if (useHours && qual < hourThreshold) continue;
     means.push(sum / n);
   }
   return means;
 }
 
 /** Note under the histogram: what the bars count and which filters applied. */
-function windHistNote(isDays, wmin, wmax, hourThreshold) {
+function windHistNote() {
   const rules = [];
   if (daylightOnly()) rules.push("daylight hours");
   if (getActiveMonths().length < 12) rules.push("the month selection");
   const t = getTempRange();
   if (t.min !== null || t.max !== null) rules.push("the temperature filter");
-  if (isDays) rules.push(`≥${hourThreshold} h with wind ${wmin}–${wmax} mph`);
   let s = "Each bar counts days whose daily average wind (mean of the retained hourly values) " +
     "falls in that 2.5 mph bin.";
   s += rules.length
@@ -1630,10 +1627,10 @@ function windHistPlaceholder(msg, note) {
 
 /**
  * Wind histogram for one or two providers' filtered hourly datasets:
- * X = 2.5 mph bins of daily average wind, Y = day count. Counts honor every
- * filter the ranking does (daylight, months, temperature, plus the
- * hours-in-wind-range rule under the "days" criterion). Hourly aggregation
- * only — other modes don't keep the hourly values the day counts need.
+ * X = 2.5 mph bins of daily average wind, Y = day count. Counts honor the
+ * shared filters (daylight, months, temperature); the wind ranking's
+ * hours-in-wind-range rule does not apply. Hourly aggregation only — other
+ * modes don't keep the hourly values the day counts need.
  */
 function renderWindHistogram(series, aggregation) {
   // series: [{ key: "open-meteo"|"meteostat", name, fdata }]
@@ -1654,25 +1651,12 @@ function renderWindHistogram(series, aggregation) {
       "The histogram bins each day by its average wind speed.");
     return;
   }
-  const isDays = $("windrank-criteria").value !== "avg";
-  let wmin = -Infinity, wmax = Infinity, hourThreshold = 0;
-  if (isDays) {
-    wmin = parseFloat($("windrank-wind-min").value);
-    wmax = parseFloat($("windrank-wind-max").value);
-    if (!Number.isFinite(wmin) || !Number.isFinite(wmax) || wmin > wmax) {
-      windHistPlaceholder(
-        "Enter a wind range (min and max, mph) to build the histogram.",
-        "The day counts follow the wind ranking's hours-in-range rule.");
-      return;
-    }
-    hourThreshold = parseInt($("windrank-hours").value, 10) || 4;
-  }
   const perProvider = withWind.map((s) => ({
     ...s,
-    means: windHistDailyMeans(s.fdata, wmin, wmax, hourThreshold, isDays),
+    means: windHistDailyMeans(s.fdata),
   }));
   const totalDays = perProvider.reduce((t, s) => t + s.means.length, 0);
-  const note = windHistNote(isDays, wmin, wmax, hourThreshold);
+  const note = windHistNote();
   if (!totalDays) {
     windHistPlaceholder("No days match the filters.", note);
     return;
