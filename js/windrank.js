@@ -685,6 +685,7 @@ function renderWindRankTable(rows, showState, isCompare = false, criteria = "day
     btn.addEventListener("click", () => loadRankedLake(r.lake));
     btnCell.appendChild(btn);
     tr.appendChild(btnCell);
+    tbody.appendChild(tr);
   });
 }
 
