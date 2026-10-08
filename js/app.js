@@ -332,6 +332,16 @@ function getRange(minId, maxId) {
 /** Temperature filter in °F; null bound = no bound. */
 function getTempRange() { return getRange("filter-temp-min", "filter-temp-max"); }
 
+/** Which daily temperature stat the filter compares against: "mean" or "min". */
+function getTempBasis() {
+  return $("filter-temp-basis").value === "min" ? "min" : "mean";
+}
+
+/** Short label for the basis, for status lines. */
+function tempBasisLabel() {
+  return getTempBasis() === "min" ? "daily min" : "daily mean";
+}
+
 /** Area filter in acres; null bound = no bound. */
 function getAreaRange() { return getRange("filter-area-min", "filter-area-max"); }
 
@@ -389,7 +399,9 @@ function describeActiveFilters() {
   const months = getActiveMonths();
   if (months.length < 12) parts.push("months: " + months.map((m) => MONTH_ABBR[m - 1]).join(", "));
   const t = getTempRange();
-  if (t.min !== null || t.max !== null) parts.push(`temp ${t.min ?? "…"}–${t.max ?? "…"}°F`);
+  if (t.min !== null || t.max !== null) {
+    parts.push(`temp ${t.min ?? "…"}–${t.max ?? "…"}°F (${tempBasisLabel()})`);
+  }
   const a = getAreaRange();
   if (a.min !== null || a.max !== null) parts.push(`area ${a.min ?? "…"}–${a.max ?? "…"} acres`);
   return parts.length ? " Filters: " + parts.join("; ") + "." : "";
@@ -397,8 +409,9 @@ function describeActiveFilters() {
 
 /**
  * Per-day info for month/temperature filtering: Map of "YYYY-MM-DD" ->
- * { month, meanTemp }. In hourly mode the daily mean is derived from the 24
- * hourly temperature values; otherwise it comes straight from the API.
+ * { month, meanTemp, minTemp }. In hourly mode the daily stats are derived
+ * from the hourly temperature values; in daily/monthly mode the API already
+ * reports daily means, so minTemp == meanTemp there.
  */
 function computeDayInfo(data, needTemp) {
   const days = new Map();
@@ -419,6 +432,7 @@ function computeDayInfo(data, needTemp) {
     out.set(dk, {
       month: d.month,
       meanTemp: d.temps.length ? d.temps.reduce((s, x) => s + x, 0) / d.temps.length : null,
+      minTemp: d.temps.length ? Math.min(...d.temps) : null,
     });
   }
   return out;
@@ -435,26 +449,44 @@ function filterDataToDays(data, keepDays) {
 
 /**
  * Apply the shared month + temperature filters to one provider's dataset:
- * keep whole days whose month is selected and whose daily mean temperature is
- * in range (hourly mode derives the daily mean from the hourly values —
- * daylight hours only when the daylight toggle is on).
- * Returns the filtered dataset, or null when no days match.
+ * keep whole days whose month is selected and whose daily temperature stat
+ * (mean or minimum, per the "Temp filter applies to" control) is in range
+ * (hourly mode derives the daily stats from the hourly values — daylight
+ * hours only when the daylight toggle is on).
+ * Returns { data, totalDays, monthDays, keptDays }:
+ * - data: the filtered dataset, or null when no days match.
+ * - totalDays: distinct days in the input data.
+ * - monthDays: days passing the month filter.
+ * - keptDays: days passing both filters.
  */
-function applySharedFilters(data, months, tempRange, tempActive) {
+function applySharedFilters(data, months, tempRange, tempActive, tempBasis) {
   const dayInfo = computeDayInfo(data, tempActive);
+  const totalDays = dayInfo.size;
+  let monthDays = 0;
   const keepDays = new Set();
   for (const [dk, info] of dayInfo) {
     if (!months.includes(info.month)) continue;
+    monthDays++;
     if (tempActive) {
-      const t = info.meanTemp;
+      const t = tempBasis === "min" ? info.minTemp : info.meanTemp;
       if (t === null || t === undefined) continue;
       if (tempRange.min !== null && t < tempRange.min) continue;
       if (tempRange.max !== null && t > tempRange.max) continue;
     }
     keepDays.add(dk);
   }
-  if (!keepDays.size) return null;
-  return filterDataToDays(data, keepDays);
+  const keptDays = keepDays.size;
+  if (!keptDays) return { data: null, totalDays, monthDays, keptDays };
+  return { data: filterDataToDays(data, keepDays), totalDays, monthDays, keptDays };
+}
+
+/** One-line summary of what the temperature filter did, or "" when inactive. */
+function tempFilterSummary(stats, tempRange, tempActive, tempBasis) {
+  if (!tempActive) return "";
+  const removed = stats.monthDays - stats.keptDays;
+  return ` Temp filter (${tempBasis === "min" ? "daily min" : "daily mean"} ` +
+    `${tempRange.min ?? "…"}–${tempRange.max ?? "…"}°F): ` +
+    `${stats.keptDays} of ${stats.monthDays} days kept (${removed} removed).`;
 }
 
 // ---------------------------------------------------------------- load
@@ -567,8 +599,11 @@ async function onLoad() {
         throw new Error("No daylight hours in the selected range — the sun never rises there on these dates.");
       }
 
-      const fdata = applySharedFilters(data, months, tempRange, tempActive);
-      if (!fdata) throw new Error("No days in the selected range match the month/temperature filters.");
+      const tempBasis = getTempBasis();
+      const filtered = applySharedFilters(data, months, tempRange, tempActive, tempBasis);
+      if (!filtered.data) throw new Error("No days in the selected range match the month/temperature filters.");
+      const fdata = filtered.data;
+      const tempSummary = tempFilterSummary(filtered, tempRange, tempActive, tempBasis);
 
       const buckets = aggregate(fdata, vars, aggregation);
       renderStatCards(fdata, vars);
@@ -585,7 +620,7 @@ async function onLoad() {
       $("visuals").hidden = false;
 
       let msg = `Loaded ${buckets.length} ${aggregation} period${buckets.length === 1 ? "" : "s"} for ${lake.name} (${effStart} to ${end}).` +
-        describeActiveFilters() + rangeNote;
+        describeActiveFilters() + tempSummary + rangeNote;
       if (skipped.length) {
         const reason = provider === "meteostat" ? "(not reported by month)" : "(hourly aggregation only)";
         msg += ` Skipped ${skipped.map((v) => v.label).join(", ")} ${reason}.`;
@@ -656,8 +691,11 @@ async function loadCompare(opts) {
     }
   }
 
-  const omFiltered = omData ? applySharedFilters(omData, months, tempRange, tempActive) : null;
-  const msFiltered = msData ? applySharedFilters(msData, months, tempRange, tempActive) : null;
+  const tempBasis = getTempBasis();
+  const omResult = omData ? applySharedFilters(omData, months, tempRange, tempActive, tempBasis) : null;
+  const msResult = msData ? applySharedFilters(msData, months, tempRange, tempActive, tempBasis) : null;
+  const omFiltered = omResult && omResult.data;
+  const msFiltered = msResult && msResult.data;
   if (!omFiltered && !msFiltered) {
     throw new Error("No days in the selected range match the month/temperature filters.");
   }
@@ -682,6 +720,13 @@ async function loadCompare(opts) {
   let msg = `Loaded ${merged.length} ${aggregation} period${merged.length === 1 ? "" : "s"} for ${lake.name} (${start} to ${end}): ` +
     `Open-Meteo ${omBuckets.length}, Meteostat ${msBuckets.length} periods.` +
     describeActiveFilters();
+  if (tempActive && (omResult || msResult)) {
+    const bits = [];
+    if (omResult) bits.push(`Open-Meteo ${omResult.monthDays - omResult.keptDays} of ${omResult.monthDays}`);
+    if (msResult) bits.push(`Meteostat ${msResult.monthDays - msResult.keptDays} of ${msResult.monthDays}`);
+    msg += ` Temp filter (${tempBasisLabel()} ${tempRange.min ?? "…"}–${tempRange.max ?? "…"}°F) removed ` +
+      bits.join(" days, ") + " days.";
+  }
   if (omEnd < end) msg += ` Open-Meteo data ends ${omEnd}.`;
   if (msEnd < end) msg += ` Meteostat data ends ${msEnd}.`;
   if (msRaw && msRaw.clampedStart) msg += ` Meteostat start pulled back to ${msRaw.start} — hourly data only goes back 30 years.`;
@@ -1606,7 +1651,9 @@ function windHistNote() {
   if (daylightOnly()) rules.push("daylight hours");
   if (getActiveMonths().length < 12) rules.push("the month selection");
   const t = getTempRange();
-  if (t.min !== null || t.max !== null) rules.push("the temperature filter");
+  if (t.min !== null || t.max !== null) {
+    rules.push(`the temperature filter (${tempBasisLabel()})`);
+  }
   let s = "Each bar counts days whose daily average wind (mean of the retained hourly values) " +
     "falls in that 2.5 mph bin.";
   s += rules.length

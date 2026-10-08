@@ -102,6 +102,15 @@
         </div>
         <div class="filter-row">
           <div>
+            <label for="filter-temp-basis">Temp filter applies to</label>
+            <select id="filter-temp-basis">
+              <option value="mean" selected>Daily mean</option>
+              <option value="min">Daily minimum</option>
+            </select>
+          </div>
+        </div>
+        <div class="filter-row">
+          <div>
             <label for="filter-area-min">Min area (acres)</label>
             <input type="number" id="filter-area-min" min="0" step="any" placeholder="Any" value="1000">
           </div>
@@ -110,7 +119,7 @@
             <input type="number" id="filter-area-max" min="0" step="any" placeholder="Any">
           </div>
         </div>
-        <p class="empty-note">Months, temperature, and area filters apply to both weather loading and lake ranking. Temperature keeps whole days whose daily mean is in range.</p>
+        <p class="empty-note">Months, temperature, and area filters apply to both weather loading and lake ranking. Temperature keeps whole days whose daily mean or minimum (your choice below) is in range.</p>
 
         <label for="aggregation">Aggregation</label>
         <select id="aggregation">
@@ -313,7 +322,7 @@
   <script src="js/daylight.js?v=1" defer></script>
   <script src="js/providers.js?v=12" defer></script>
   <script src="js/lakes.js?v=1" defer></script>
-  <script src="js/app.js?v=22" defer></script>
-  <script src="js/windrank.js?v=7" defer></script>
+  <script src="js/app.js?v=23" defer></script>
+  <script src="js/windrank.js?v=8" defer></script>
 </body>
 </html>

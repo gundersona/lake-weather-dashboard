@@ -195,8 +195,8 @@ async function fetchBatchHourly(batch, start, end, signal, wantTemp) {
 
 /**
  * Group a lake's hourly series into per-day buckets after daylight and month
- * filtering. Each bucket: { winds: [mph|null], tSum, tN } over one UTC day.
- * Hours with no wind data are kept as null (they never count toward the
+ * filtering. Each bucket: { winds: [mph|null], tSum, tN, tMin } over one UTC
+ * day. Hours with no wind data are kept as null (they never count toward the
  * threshold, and are skipped in averages).
  */
 function windrankDayBuckets(lake, s, months, useDaylight) {
@@ -215,60 +215,73 @@ function windrankDayBuckets(lake, s, months, useDaylight) {
     const ymd = times[i].slice(0, 10);
     if (!months.includes(parseInt(ymd.slice(5, 7), 10))) continue;
     let e = byDate.get(ymd);
-    if (!e) { e = { winds: [], tSum: 0, tN: 0 }; byDate.set(ymd, e); days.push(e); }
+    if (!e) { e = { winds: [], tSum: 0, tN: 0, tMin: Infinity }; byDate.set(ymd, e); days.push(e); }
     e.winds.push(winds[i]);
     const t = temps ? temps[i] : null;
-    if (t !== null && t !== undefined) { e.tSum += t; e.tN++; }
+    if (t !== null && t !== undefined) { e.tSum += t; e.tN++; if (t < e.tMin) e.tMin = t; }
   }
   return days;
 }
 
-/** Whole-day temperature filter: keep days whose mean (of retained hours) is in range. */
-function windrankDayPassesTemp(e, tempRange, tempActive) {
+/**
+ * Whole-day temperature filter: keep days whose daily temperature stat (mean
+ * or minimum, per the "Temp filter applies to" control) is in range.
+ */
+function windrankDayPassesTemp(e, tempRange, tempActive, tempBasis) {
   if (!tempActive) return true;
   if (!e.tN) return false;
-  const mean = e.tSum / e.tN;
-  if (tempRange.min !== null && mean < tempRange.min) return false;
-  if (tempRange.max !== null && mean > tempRange.max) return false;
+  const t = tempBasis === "min" ? e.tMin : e.tSum / e.tN;
+  if (tempRange.min !== null && t < tempRange.min) return false;
+  if (tempRange.max !== null && t > tempRange.max) return false;
   return true;
 }
 
 /**
  * Count the days in one lake's hourly series that match the criteria: at
  * least hourThreshold hours with wind inside [wmin, wmax], on a selected
- * month, with the daily mean temperature in range when the temp filter is
- * active. s is { time: [ISO], wind: [mph|null], temp: [F|null] }, UTC hourly.
+ * month, with the daily temperature in range when the temp filter is active.
+ * s is { time: [ISO], wind: [mph|null], temp: [F|null] }, UTC hourly.
  * Hours with no wind data never count toward the threshold.
+ * Returns { match, eligible, monthDays }: days hitting the wind criterion,
+ * days passing the month + temperature filters (the denominator for the %
+ * column), and days passing the month filter with usable temp data (the
+ * temp-filter denominator for the "removed" count).
  */
-function windrankLakeDays(lake, s, months, tempRange, tempActive, wmin, wmax, hourThreshold, useDaylight) {
-  let matchDays = 0;
+function windrankLakeDays(lake, s, months, tempRange, tempActive, tempBasis, wmin, wmax, hourThreshold, useDaylight) {
+  let match = 0, eligible = 0, monthDays = 0;
   for (const e of windrankDayBuckets(lake, s, months, useDaylight)) {
-    if (!windrankDayPassesTemp(e, tempRange, tempActive)) continue;
+    if (tempActive && !e.tN) continue;
+    monthDays++;
+    if (!windrankDayPassesTemp(e, tempRange, tempActive, tempBasis)) continue;
+    eligible++;
     let qual = 0;
     for (const w of e.winds) {
       if (w !== null && w !== undefined && w >= wmin && w <= wmax) qual++;
     }
-    if (qual >= hourThreshold) matchDays++;
+    if (qual >= hourThreshold) match++;
   }
-  return matchDays;
+  return { match, eligible, monthDays };
 }
 
 /**
- * Mean hourly wind (mph) over the days passing the shared filters; null when
- * there are no usable hours. Same filtering as the day-count criterion, so
- * both rankings answer to all filters.
+ * Mean hourly wind (mph) over the days passing the shared filters, with the
+ * count of eligible days. Same filtering as the day-count criterion, so both
+ * rankings answer to all filters. Returns { avg, eligible, monthDays }.
  */
-function windrankLakeAvg(lake, s, months, tempRange, tempActive, useDaylight) {
-  let sum = 0, n = 0;
+function windrankLakeAvg(lake, s, months, tempRange, tempActive, tempBasis, useDaylight) {
+  let sum = 0, n = 0, eligible = 0, monthDays = 0;
   for (const e of windrankDayBuckets(lake, s, months, useDaylight)) {
-    if (!windrankDayPassesTemp(e, tempRange, tempActive)) continue;
+    if (tempActive && !e.tN) continue;
+    monthDays++;
+    if (!windrankDayPassesTemp(e, tempRange, tempActive, tempBasis)) continue;
+    eligible++;
     for (const w of e.winds) {
       if (w === null || w === undefined) continue;
       sum += w;
       n++;
     }
   }
-  return n ? sum / n : null;
+  return { avg: n ? sum / n : null, eligible, monthDays };
 }
 
 async function runWindRank() {
@@ -341,6 +354,7 @@ async function runWindRank() {
   }
   const tempRange = getTempRange();
   const tempActive = tempRange.min !== null || tempRange.max !== null;
+  const tempBasis = getTempBasis();
   const useDaylight = daylightOnly();
 
   windrankRunning = true;
@@ -383,22 +397,40 @@ async function runWindRank() {
     }
     const results = [];
     let failed = 0, processed = 0, next = 0;
+    // Temp-filter verbosity: days removed per lake (month-filtered days with
+    // temp data minus eligible days), summed over ranked lakes.
+    let removedSum = 0, removedMin = Infinity, removedMax = 0;
+    function noteTempRemoved(monthDays, eligible) {
+      if (!tempActive) return;
+      const removed = monthDays - eligible;
+      removedSum += removed;
+      if (removed < removedMin) removedMin = removed;
+      if (removed > removedMax) removedMax = removed;
+    }
     // Compare mode: phase 1 stores each lake's Open-Meteo value here for
-    // phase 2 (Meteostat) to join against — only one number per lake, so
+    // phase 2 (Meteostat) to join against — one small record per lake, so
     // even the all-states scope stays light on memory.
     const omValues = new Map();
-    /** One lake's ranking value under the active criterion (null when unusable). */
+    /**
+     * One lake's ranking result under the active criterion (value null when
+     * unusable): { value, eligible, monthDays } — the value (match-day count
+     * or mean wind), days passing the month + temperature filters, and days
+     * passing the month filter with usable temp data.
+     */
     function tallyValue(lake, s) {
-      return isAvg
-        ? windrankLakeAvg(lake, s, months, tempRange, tempActive, useDaylight)
-        : windrankLakeDays(lake, s, months, tempRange, tempActive,
+      const r = isAvg
+        ? windrankLakeAvg(lake, s, months, tempRange, tempActive, tempBasis, useDaylight)
+        : windrankLakeDays(lake, s, months, tempRange, tempActive, tempBasis,
             wmin, wmax, hourThreshold, useDaylight);
+      const value = isAvg ? r.avg : r.match;
+      return { value, eligible: r.eligible, monthDays: r.monthDays };
     }
     function tally(lake, s) {
       if (!s) { failed++; return; }
-      const v = tallyValue(lake, s);
-      if (v === null || v === undefined) failed++;
-      else results.push({ lake, value: v });
+      const t = tallyValue(lake, s);
+      if (t.value === null || t.value === undefined) { failed++; return; }
+      results.push({ lake, value: t.value, eligible: t.eligible, monthDays: t.monthDays });
+      noteTempRemoved(t.monthDays, t.eligible);
     }
     async function omWorker() {
       while (next < batches.length) {
@@ -454,9 +486,9 @@ async function runWindRank() {
       async function processOmBatch(batch) {
         const series = await fetchBatchHourly(batch, start, omEnd, signal, tempActive);
         for (let k = 0; k < batch.length; k++) {
-          const v = tallyValue(batch[k], series[k]);
-          if (v === null || v === undefined) failed++;
-          else omValues.set(batch[k], v);
+          const t = tallyValue(batch[k], series[k]);
+          if (t.value === null || t.value === undefined) failed++;
+          else omValues.set(batch[k], t);
         }
       }
       async function omPhaseWorker() {
@@ -502,9 +534,12 @@ async function runWindRank() {
             const s = await msFetchLakeHourly(lake.lat, lake.lon, start, msEnd, signal);
             const omV = omValues.get(lake);
             if (omV !== undefined) {
-              const msV = s ? tallyValue(lake, s) : null;
-              if (msV === null || msV === undefined) failed++;
-              else results.push({ lake, om: omV, ms: msV });
+              const t = s ? tallyValue(lake, s) : { value: null };
+              if (t.value === null || t.value === undefined) failed++;
+              else {
+                results.push({ lake, om: omV, ms: t });
+                noteTempRemoved(t.monthDays, t.eligible);
+              }
             }
           } catch (err) {
             if (signal.aborted) return;
@@ -525,21 +560,27 @@ async function runWindRank() {
     // value leads; the Δ column shows the other provider's difference.
     const rankByMs = isCompare && $("windrank-rankby").value === "meteostat";
     results.sort((a, b) => {
-      const av = isCompare ? (rankByMs ? a.ms : a.om) : a.value;
-      const bv = isCompare ? (rankByMs ? b.ms : b.om) : b.value;
+      const av = isCompare ? (rankByMs ? a.ms.value : a.om.value) : a.value;
+      const bv = isCompare ? (rankByMs ? b.ms.value : b.om.value) : b.value;
       if (isAvg) {
         const d = avgDir === "asc" ? av - bv : bv - av;
         return d || a.lake.name.localeCompare(b.lake.name);
       }
       return (bv - av) || a.lake.name.localeCompare(b.lake.name);
     });
-    renderWindRankTable(results.slice(0, topN), scope === "all", isCompare, criteria);
+    renderWindRankTable(results.slice(0, topN), scope === "all", isCompare, criteria, days);
     $("windrank-table-wrap").hidden = false;
     const notes = [];
     if (!isAvg) notes.push(`wind ${wmin}–${wmax} mph for ≥${hourThreshold} h/day`);
     notes.push(useDaylight ? "daylight hours only" : "all 24 hours");
     if (months.length < 12) notes.push(`months: ${months.map((m) => MONTH_ABBR[m - 1]).join(", ")}`);
-    if (tempActive) notes.push(`daily mean temp ${tempRange.min ?? "…"}–${tempRange.max ?? "…"}°F`);
+    if (tempActive) {
+      notes.push(`temp ${tempRange.min ?? "…"}–${tempRange.max ?? "…"}°F (${tempBasisLabel()})`);
+      if (results.length && removedMin !== Infinity) {
+        const avgRemoved = removedSum / results.length;
+        notes.push(`temp filter removed ${avgRemoved.toFixed(1)} days/lake on average (range ${removedMin}–${removedMax})`);
+      }
+    }
     if (areaExcluded) notes.push(`${areaExcluded.toLocaleString()} excluded by the area filter`);
     if (failed) notes.push(isCompare
       ? `${failed.toLocaleString()} had no usable data from one or both providers`
@@ -569,22 +610,43 @@ async function runWindRank() {
   }
 }
 
-function renderWindRankTable(rows, showState, isCompare = false, criteria = "days") {
+function renderWindRankTable(rows, showState, isCompare = false, criteria = "days", totalDays = 0) {
   const isAvg = criteria === "avg";
   const thead = document.querySelector("#windrank-table thead");
   const tbody = document.querySelector("#windrank-table tbody");
   thead.innerHTML = "";
   tbody.innerHTML = "";
+  /** "5 (71%)" — count with its share of temp+month-eligible days. */
+  const daysCell = (v, elig) =>
+    elig > 0 ? `${v} (${Math.round((v / elig) * 100)}%)` : String(v);
+  /** "23 (74%)" — eligible days with their share of the selected range. */
+  const eligCell = (elig) =>
+    totalDays > 0 ? `${elig} (${Math.round((elig / totalDays) * 100)}%)` : String(elig);
   const cols = ["#", "Lake", "County"];
   if (showState) cols.push("State");
   cols.push("Area (acres)");
-  if (isCompare) cols.push(...(isAvg ? ["OM wind (mph)", "MS wind (mph)", "Δ (mph)"] : ["OM days", "MS days", "Δ"]));
-  else cols.push(isAvg ? "Avg wind (mph)" : "Days matching");
+  if (isCompare) {
+    if (isAvg) {
+      cols.push("OM wind (mph)", "MS wind (mph)", "\u0394 (mph)", "Eligible days (OM/MS)");
+    } else {
+      cols.push("OM days", "MS days", "\u0394");
+    }
+  } else {
+    cols.push(isAvg ? "Avg wind (mph)" : "Days matching");
+    cols.push(isAvg ? "Eligible days" : "% of eligible");
+  }
   cols.push("");
   const headRow = document.createElement("tr");
   for (const c of cols) {
     const th = document.createElement("th");
     th.textContent = c;
+    if (c === "Days matching" || c === "OM days" || c === "MS days") {
+      th.title = "Matching days (share of days passing the month and temperature filters)";
+    } else if (c === "% of eligible") {
+      th.title = "Matching days divided by days passing the month and temperature filters";
+    } else if (c === "Eligible days" || c === "Eligible days (OM/MS)") {
+      th.title = "Days passing the month and temperature filters (share of days in the selected range)";
+    }
     headRow.appendChild(th);
   }
   thead.appendChild(headRow);
@@ -595,13 +657,21 @@ function renderWindRankTable(rows, showState, isCompare = false, criteria = "day
     if (showState) cells.push(r.lake.state);
     cells.push(formatAcres(r.lake.area_km2));
     if (isCompare) {
-      const fmtV = (v) => (isAvg ? v.toFixed(1) : String(v));
-      cells.push(fmtV(r.om), fmtV(r.ms));
-      const d = r.ms - r.om;
-      const mag = isAvg ? Math.abs(d).toFixed(1) : String(Math.abs(d));
-      cells.push(`${d > 0 ? "+" : d < 0 ? "−" : ""}${mag}`);
+      if (isAvg) {
+        const d = r.ms.value - r.om.value;
+        const mag = Math.abs(d).toFixed(1);
+        cells.push(r.om.value.toFixed(1), r.ms.value.toFixed(1),
+          `${d > 0 ? "+" : d < 0 ? "−" : ""}${mag}`,
+          `${eligCell(r.om.eligible)} / ${eligCell(r.ms.eligible)}`);
+      } else {
+        cells.push(daysCell(r.om.value, r.om.eligible), daysCell(r.ms.value, r.ms.eligible));
+        const d = r.ms.value - r.om.value;
+        cells.push(`${d > 0 ? "+" : d < 0 ? "−" : ""}${Math.abs(d)}`);
+      }
+    } else if (isAvg) {
+      cells.push(r.value.toFixed(1), eligCell(r.eligible));
     } else {
-      cells.push(isAvg ? r.value.toFixed(1) : String(r.value));
+      cells.push(String(r.value), daysCell(r.value, r.eligible));
     }
     for (const c of cells) {
       const td = document.createElement("td");
@@ -615,7 +685,6 @@ function renderWindRankTable(rows, showState, isCompare = false, criteria = "day
     btn.addEventListener("click", () => loadRankedLake(r.lake));
     btnCell.appendChild(btn);
     tr.appendChild(btnCell);
-    tbody.appendChild(tr);
   });
 }
 
